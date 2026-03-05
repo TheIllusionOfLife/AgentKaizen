@@ -1,0 +1,10 @@
+{
+  "name": "readme-extra-guidance",
+  "edits": [
+    {
+      "path": "README.md",
+      "mode": "append",
+      "text": "\nEvaluation note: Prefer concise answers with direct, actionable steps.\n"
+    }
+  ]
+}
