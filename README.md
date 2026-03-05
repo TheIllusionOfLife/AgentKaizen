@@ -55,11 +55,28 @@ uv run codex-weave \
   --must-contain "ok" \
   --must-not-contain "forbidden" \
   --max-chars 120 \
+  --required-section "Summary" \
+  --require-file-paths \
   --guardrail-mode warn
 ```
 
 - `--guardrail-mode warn`: print violations, keep exit code.
 - `--guardrail-mode fail`: return exit code `3` on violations.
+- `--require-json`: require valid JSON output.
+- `--required-section <name>`: repeatable section-text requirement.
+- `--require-file-paths`: require at least one file path citation.
+
+
+## Generate Cases from Recent Traces
+Create draft eval cases from recent `codex-weave` traces:
+
+```bash
+uv run codex-casegen \
+  --limit 20 \
+  --output /Users/yuyamukai/dev/AgentKaizen/evals/cases.generated.jsonl
+```
+
+Then review and refine generated checks (`must_contain`, `must_not_contain`, `max_chars`).
 
 ## Offline Evals (Doc Impact)
 Run baseline + variants on the same case set:
@@ -67,12 +84,15 @@ Run baseline + variants on the same case set:
 ```bash
 uv run codex-eval \
   --cases evals/cases.jsonl \
-  --variant-file evals/variants/example_add_line_to_readme.json
+  --variant-file evals/variants/example_add_line_to_readme.json \
+  --quality-similar-threshold 0.02 \
+  --latency-regression-threshold 0.20 \
+  --token-regression-threshold 0.20
 ```
 
 Case file format (`evals/cases.jsonl`):
 ```json
-{"prompt":"Say only: ok","must_contain":["ok"],"must_not_contain":["sorry"],"max_chars":40}
+{"prompt":"Say only: ok","must_contain":["ok"],"must_not_contain":["sorry"],"max_chars":40,"require_json":false,"required_sections":[],"require_file_paths":false}
 ```
 
 Variant file format:
@@ -90,6 +110,8 @@ Variant file format:
 ```
 
 `mode` supports `append`, `prepend`, and `replace`.
+
+`codex-eval` exits with code `4` if a candidate fails regression gates (quality is similar but latency/tokens regress beyond threshold).
 
 ## Development
 Run quality checks before committing:

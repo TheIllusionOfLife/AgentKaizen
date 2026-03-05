@@ -11,7 +11,15 @@ from typing import Any
 
 import weave
 
-from codex_scoring import score_contains_all, score_forbidden_absent, score_max_chars
+from codex_scoring import (
+    score_contains_all,
+    score_file_path_citations,
+    score_forbidden_absent,
+    score_json_validity,
+    score_max_chars,
+    score_required_sections,
+    score_token_usage,
+)
 from codex_weave import (
     DEFAULT_ENTITY,
     DEFAULT_PROJECT,
@@ -78,6 +86,10 @@ def copy_workspace(src_root: Path, dst_root: Path) -> None:
 contains_all_scorer = weave.op()(score_contains_all)
 forbidden_absent_scorer = weave.op()(score_forbidden_absent)
 max_chars_scorer = weave.op()(score_max_chars)
+json_validity_scorer = weave.op()(score_json_validity)
+required_sections_scorer = weave.op()(score_required_sections)
+file_path_citations_scorer = weave.op()(score_file_path_citations)
+token_usage_scorer = weave.op()(score_token_usage)
 
 
 def normalize_codex_args(codex_args: list[str]) -> list[str]:
@@ -94,7 +106,7 @@ class CodexVariantModel(weave.Model):
     codex_args: list[str] = []
 
     @weave.op()
-    def predict(self, prompt: str) -> str:
+    def predict(self, prompt: str) -> dict[str, Any]:
         command = ["codex", "exec", "-C", self.workspace, "--json"]
         if self.codex_model:
             command.extend(["--model", self.codex_model])
@@ -111,7 +123,7 @@ class CodexVariantModel(weave.Model):
             raise RuntimeError(
                 f"codex exec failed (exit={proc.returncode}): {proc.stderr.strip()}"
             )
-        return parsed.final_message
+        return {"text": parsed.final_message, "usage": parsed.usage}
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -140,6 +152,24 @@ def _build_parser() -> argparse.ArgumentParser:
         default=[],
         help="Extra argument forwarded to codex exec (repeatable)",
     )
+    parser.add_argument(
+        "--quality-similar-threshold",
+        type=float,
+        default=0.02,
+        help="Quality delta at or below this is considered similar",
+    )
+    parser.add_argument(
+        "--latency-regression-threshold",
+        type=float,
+        default=0.20,
+        help="Fail when candidate latency exceeds baseline by this fraction",
+    )
+    parser.add_argument(
+        "--token-regression-threshold",
+        type=float,
+        default=0.20,
+        help="Fail when candidate token usage exceeds baseline by this fraction",
+    )
     return parser
 
 
@@ -151,6 +181,126 @@ def _variants_from_args(variant_files: list[str]) -> list[dict[str, Any]]:
             raise ValueError(f"Variant file missing 'name': {variant_path}")
         variants.append(variant)
     return variants
+
+
+def _extract_true_fraction(summary: dict[str, Any], scorer_key: str) -> float:
+    return float(summary.get(scorer_key, {}).get("pass", {}).get("true_fraction", 0.0))
+
+
+def _extract_mean(
+    summary: dict[str, Any], scorer_key: str, field: str | None = None
+) -> float | None:
+    scorer_summary = summary.get(scorer_key, {})
+    if not isinstance(scorer_summary, dict):
+        return None
+    if field is None:
+        value = scorer_summary.get("mean")
+    else:
+        field_summary = scorer_summary.get(field, {})
+        if not isinstance(field_summary, dict):
+            return None
+        value = field_summary.get("mean")
+    if value is None:
+        return None
+    return float(value)
+
+
+def _quality_score(summary: dict[str, Any]) -> float:
+    quality_keys = [
+        "score_contains_all",
+        "score_forbidden_absent",
+        "score_max_chars",
+        "score_json_validity",
+        "score_required_sections",
+        "score_file_path_citations",
+    ]
+    values = [_extract_true_fraction(summary, key) for key in quality_keys]
+    return sum(values) / len(values)
+
+
+def rank_variant_results(
+    results: list[dict[str, Any]],
+    *,
+    quality_similar_threshold: float,
+    latency_regression_threshold: float,
+    token_regression_threshold: float,
+) -> list[dict[str, Any]]:
+    baseline_item = next(
+        (item for item in results if item["variant"] == "baseline"), None
+    )
+    baseline_summary = baseline_item["summary"] if baseline_item else {}
+    baseline_quality = _quality_score(baseline_summary) if baseline_item else 0.0
+    baseline_latency = _extract_mean(baseline_summary, "model_latency")
+    baseline_tokens = _extract_mean(
+        baseline_summary, "score_token_usage", "total_tokens"
+    )
+
+    ranked: list[dict[str, Any]] = []
+    for result in results:
+        summary = result["summary"]
+        quality_score = _quality_score(summary)
+        latency_mean = _extract_mean(summary, "model_latency")
+        token_mean = _extract_mean(summary, "score_token_usage", "total_tokens")
+        quality_delta = quality_score - baseline_quality
+
+        gate_pass = True
+        gate_reason = "baseline"
+        if result["variant"] != "baseline":
+            reasons: list[str] = []
+            quality_similar = quality_delta <= quality_similar_threshold
+            if quality_similar:
+                if (
+                    baseline_latency
+                    and latency_mean is not None
+                    and latency_mean
+                    > baseline_latency * (1 + latency_regression_threshold)
+                ):
+                    reasons.append("latency_regression")
+                if (
+                    baseline_tokens
+                    and token_mean is not None
+                    and token_mean > baseline_tokens * (1 + token_regression_threshold)
+                ):
+                    reasons.append("token_regression")
+            gate_pass = len(reasons) == 0
+            gate_reason = ",".join(reasons) if reasons else "pass"
+
+        ranked.append(
+            {
+                **result,
+                "quality_score": quality_score,
+                "quality_delta_vs_baseline": quality_delta,
+                "latency_mean": latency_mean,
+                "token_mean": token_mean,
+                "gate_pass": gate_pass,
+                "gate_reason": gate_reason,
+            }
+        )
+    return sorted(ranked, key=lambda item: item["quality_score"], reverse=True)
+
+
+def render_ranked_summary_table(ranked: list[dict[str, Any]]) -> str:
+    lines = ["Ranking Summary:"]
+    for idx, item in enumerate(ranked, start=1):
+        summary = item["summary"]
+        lines.extend(
+            [
+                f"{idx}. variant: {item['variant']}",
+                f"   quality_score: {item['quality_score']:.3f}",
+                f"   quality_delta_vs_baseline: {item['quality_delta_vs_baseline']:.3f}",
+                f"   contains_pass: {_extract_true_fraction(summary, 'score_contains_all'):.3f}",
+                f"   forbidden_pass: {_extract_true_fraction(summary, 'score_forbidden_absent'):.3f}",
+                f"   max_chars_pass: {_extract_true_fraction(summary, 'score_max_chars'):.3f}",
+                f"   json_pass: {_extract_true_fraction(summary, 'score_json_validity'):.3f}",
+                f"   sections_pass: {_extract_true_fraction(summary, 'score_required_sections'):.3f}",
+                f"   file_paths_pass: {_extract_true_fraction(summary, 'score_file_path_citations'):.3f}",
+                f"   latency_mean: {item['latency_mean'] if item['latency_mean'] is not None else 'n/a'}",
+                f"   total_tokens_mean: {item['token_mean'] if item['token_mean'] is not None else 'n/a'}",
+                f"   gate_pass: {item['gate_pass']}",
+                f"   gate_reason: {item['gate_reason']}",
+            ]
+        )
+    return "\n".join(lines)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -168,6 +318,7 @@ def main(argv: list[str] | None = None) -> int:
     cases = load_cases_jsonl(Path(args.cases))
     variants = _variants_from_args(args.variant_file)
 
+    variant_results: list[dict[str, Any]] = []
     for variant in variants:
         with tempfile.TemporaryDirectory(prefix="codex-eval-") as td:
             temp_workspace = Path(td) / "workspace"
@@ -188,15 +339,32 @@ def main(argv: list[str] | None = None) -> int:
                     contains_all_scorer,
                     forbidden_absent_scorer,
                     max_chars_scorer,
+                    json_validity_scorer,
+                    required_sections_scorer,
+                    file_path_citations_scorer,
+                    token_usage_scorer,
                 ],
             )
             result = asyncio.run(evaluation.evaluate(model))
-            print(
-                json.dumps(
-                    {"variant": variant["name"], "summary": result}, ensure_ascii=True
-                )
-            )
+            item = {"variant": variant["name"], "summary": result}
+            variant_results.append(item)
+            print(json.dumps(item, ensure_ascii=True))
 
+    ranked = rank_variant_results(
+        variant_results,
+        quality_similar_threshold=args.quality_similar_threshold,
+        latency_regression_threshold=args.latency_regression_threshold,
+        token_regression_threshold=args.token_regression_threshold,
+    )
+    print(render_ranked_summary_table(ranked))
+
+    failed_candidates = [
+        item
+        for item in ranked
+        if item["variant"] != "baseline" and not item["gate_pass"]
+    ]
+    if failed_candidates:
+        return 4
     return 0
 
 

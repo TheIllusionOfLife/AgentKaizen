@@ -9,13 +9,14 @@ dependencies = [
 [project.scripts]
 codex-weave = "codex_weave:main"
 codex-eval = "codex_evals:main"
+codex-casegen = "codex_casegen:main"
 
 [build-system]
 requires = ["setuptools>=80"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-py-modules = ["codex_weave", "codex_evals", "codex_scoring"]
+py-modules = ["codex_weave", "codex_evals", "codex_scoring", "codex_casegen"]
 
 [dependency-groups]
 dev = [

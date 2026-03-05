@@ -120,6 +120,22 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         default="warn",
         help="On guardrail violations: warn (default) or fail with exit code 3",
     )
+    parser.add_argument(
+        "--require-json",
+        action="store_true",
+        help="Guardrail: output must be valid JSON",
+    )
+    parser.add_argument(
+        "--required-section",
+        action="append",
+        default=[],
+        help="Guardrail: output must include this section text (repeatable)",
+    )
+    parser.add_argument(
+        "--require-file-paths",
+        action="store_true",
+        help="Guardrail: output must include at least one file path citation",
+    )
     return parser
 
 
@@ -177,6 +193,9 @@ def main(argv: list[str] | None = None) -> int:
             must_contain=args.must_contain,
             must_not_contain=args.must_not_contain,
             max_chars=args.max_chars,
+            require_json=args.require_json,
+            required_sections=args.required_section,
+            require_file_paths=args.require_file_paths,
         )
         return {
             "command": command,
@@ -197,7 +216,12 @@ def main(argv: list[str] | None = None) -> int:
         print(result["stderr"], file=sys.stderr, end="")
 
     has_guardrails = bool(
-        args.must_contain or args.must_not_contain or args.max_chars is not None
+        args.must_contain
+        or args.must_not_contain
+        or args.max_chars is not None
+        or args.require_json
+        or args.required_section
+        or args.require_file_paths
     )
     violation = has_guardrails and not result["guardrails"]["pass"]
     if violation:

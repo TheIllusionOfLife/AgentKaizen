@@ -1,0 +1,178 @@
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path
+from typing import Any
+
+import weave
+from weave.trace.context import weave_client_context
+
+from codex_weave import DEFAULT_ENTITY, DEFAULT_PROJECT, ensure_wandb_api_key
+
+
+def build_case_from_call_output(
+    call_output: dict[str, Any], max_chars_padding: int
+) -> dict[str, Any]:
+    prompt = str(call_output["prompt"])
+    final_message = str(call_output.get("final_message", ""))
+    max_chars = len(final_message) + max_chars_padding
+    return {
+        "prompt": prompt,
+        "must_contain": [],
+        "must_not_contain": [],
+        "max_chars": max_chars,
+    }
+
+
+def deduplicate_cases_by_prompt(cases: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen: set[str] = set()
+    deduped: list[dict[str, Any]] = []
+    for case in cases:
+        prompt = case["prompt"]
+        if prompt in seen:
+            continue
+        seen.add(prompt)
+        deduped.append(case)
+    return deduped
+
+
+def load_cases_jsonl(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    rows: list[dict[str, Any]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        rows.append(json.loads(stripped))
+    return rows
+
+
+def write_cases_jsonl(path: Path, cases: list[dict[str, Any]]) -> None:
+    lines = [json.dumps(case, ensure_ascii=True) for case in cases]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
+
+
+def fetch_recent_codex_cases(
+    *,
+    limit: int,
+    op_substring: str,
+    max_chars_padding: int,
+) -> list[dict[str, Any]]:
+    client = weave_client_context.get_weave_client()
+    cases: list[dict[str, Any]] = []
+
+    calls_iter = client.get_calls(
+        limit=max(limit * 5, 50),
+        sort_by=[{"field": "started_at", "direction": "desc"}],
+    )
+
+    for call in calls_iter:
+        op_name = str(getattr(call, "op_name", ""))
+        if op_substring not in op_name:
+            continue
+
+        output_obj = getattr(call, "output", None)
+        try:
+            output = dict(output_obj) if output_obj is not None else {}
+        except Exception:
+            continue
+
+        if not isinstance(output, dict):
+            continue
+        if output.get("returncode") != 0:
+            continue
+        if "prompt" not in output:
+            continue
+
+        case = build_case_from_call_output(output, max_chars_padding=max_chars_padding)
+        cases.append(case)
+        if len(cases) >= limit:
+            break
+
+    return deduplicate_cases_by_prompt(cases)[:limit]
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Generate eval cases from recent Weave codex traces"
+    )
+    parser.add_argument("--entity", default=DEFAULT_ENTITY, help="W&B entity/team")
+    parser.add_argument("--project", default=DEFAULT_PROJECT, help="W&B project")
+    parser.add_argument("--limit", type=int, default=20, help="Max cases to generate")
+    parser.add_argument(
+        "--output",
+        default="evals/cases.generated.jsonl",
+        help="Output JSONL file",
+    )
+    parser.add_argument(
+        "--append",
+        action="store_true",
+        help="Append to existing output file (dedupe by prompt)",
+    )
+    parser.add_argument(
+        "--max-chars-padding",
+        type=int,
+        default=20,
+        help="Padding added to observed output length when generating max_chars",
+    )
+    parser.add_argument(
+        "--op-substring",
+        default="run_codex_exec_traced",
+        help="Only use calls whose op_name contains this value",
+    )
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = _build_parser()
+    args = parser.parse_args(argv)
+
+    if not ensure_wandb_api_key():
+        print("WANDB_API_KEY is required to generate cases.")
+        return 2
+
+    weave.init(f"{args.entity}/{args.project}")
+
+    new_cases = fetch_recent_codex_cases(
+        limit=args.limit,
+        op_substring=args.op_substring,
+        max_chars_padding=args.max_chars_padding,
+    )
+
+    out_path = Path(args.output).expanduser().resolve()
+    if args.append:
+        existing = load_cases_jsonl(out_path)
+        merged = deduplicate_cases_by_prompt([*existing, *new_cases])
+        write_cases_jsonl(out_path, merged)
+        print(
+            json.dumps(
+                {
+                    "generated": len(new_cases),
+                    "existing": len(existing),
+                    "written": len(merged),
+                    "output": str(out_path),
+                },
+                ensure_ascii=True,
+            )
+        )
+    else:
+        write_cases_jsonl(out_path, new_cases)
+        print(
+            json.dumps(
+                {
+                    "generated": len(new_cases),
+                    "written": len(new_cases),
+                    "output": str(out_path),
+                },
+                ensure_ascii=True,
+            )
+        )
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
