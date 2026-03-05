@@ -6,12 +6,12 @@
 
 > Integrate OpenAI with Weave for tracing, evaluation, and monitoring
 
-<a target="_blank" href="https://colab.research.google.com/github/wandb/examples/blob/master/weave/docs/quickstart_openai.ipynb" aria-label="Open in Google Colab">
+<a target="_blank" rel="noopener noreferrer" href="https://colab.research.google.com/github/wandb/examples/blob/master/weave/docs/quickstart_openai.ipynb" aria-label="Open in Google Colab">
   <img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab" />
 </a>
 
 <Note>
-  Do you want to experiment with OpenAI models on Weave without any set up? Try the [LLM Playground](../tools/playground).
+  Do you want to experiment with OpenAI models on Weave without any set up? Try the [LLM Playground](https://docs.wandb.ai/weave/tools/playground).
 </Note>
 
 ## Tracing
@@ -383,4 +383,4 @@ Now that you've set up tracing for OpenAI, you can:
 3. **Monitor performance**: Track latency, costs, and other metrics
 4. **Debug issues**: Use traces to understand what's happening in your LLM application
 
-For more information on these topics, check out our [evaluation guide](../evaluation/scorers) and [monitoring guide](../tracking).
+For more information on these topics, check out our [evaluation guide](https://docs.wandb.ai/weave/guides/core-types/evaluations) and [monitoring guide](https://docs.wandb.ai/weave/guides/tracking/monitoring).

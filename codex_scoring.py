@@ -107,8 +107,15 @@ def score_file_path_citations(
 
 def score_token_usage(output: str | dict[str, Any]) -> dict[str, Any]:
     usage = _extract_usage(output)
-    input_tokens = int(usage.get("input_tokens", 0) or 0)
-    output_tokens = int(usage.get("output_tokens", 0) or 0)
+
+    def _safe_int(value: Any) -> int:
+        try:
+            return int(value or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    input_tokens = _safe_int(usage.get("input_tokens", 0))
+    output_tokens = _safe_int(usage.get("output_tokens", 0))
     total_tokens = input_tokens + output_tokens
     return {
         "pass": True,

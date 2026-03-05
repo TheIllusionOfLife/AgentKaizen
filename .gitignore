@@ -8,6 +8,9 @@ __pycache__/
 
 # Virtual env and local secrets
 .venv/
+.env
+.env.*
+.env.*.local
 .env.local
 
 # OS/editor noise

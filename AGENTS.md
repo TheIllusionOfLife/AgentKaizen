@@ -3,7 +3,7 @@
 ## Project Structure & Module Organization
 This repository is a lightweight Python toolkit for tracing and evaluating Codex CLI behavior with W&B Weave.
 - Core runtime modules: `codex_weave.py` (trace wrapper), `codex_evals.py` (offline eval runner), `codex_scoring.py` (shared scorers).
-- CLI entry scripts are exposed through `pyproject.toml` (`codex-weave`, `codex-eval`).
+- CLI entry scripts are exposed through `pyproject.toml` (`codex-weave`, `codex-eval`, `codex-casegen`).
 - Evaluation assets live under `evals/`:
   - `evals/cases.jsonl` for prompt test cases
   - `evals/variants/*.json` for document-edit variants
@@ -13,6 +13,7 @@ This repository is a lightweight Python toolkit for tracing and evaluating Codex
 Use `uv` for all Python workflow tasks.
 - `uv run codex-weave --prompt "Say only: ok"`: run Codex with Weave tracing.
 - `uv run codex-eval --cases evals/cases.jsonl --variant-file <file>`: compare baseline vs variant docs using Weave Evals.
+- `uv run codex-casegen --limit 20 --output evals/cases.generated.jsonl`: draft eval cases from recent traces.
 - `uv run --group dev pytest`: run all tests.
 - `uv run --with ruff ruff check .`: lint.
 - `uv run --with ruff ruff format --check .`: formatting check.

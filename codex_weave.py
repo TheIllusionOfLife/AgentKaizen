@@ -19,14 +19,14 @@ DEFAULT_PROJECT = "AgentKaizen"
 
 @dataclass
 class ParsedEvents:
-    events: list[dict]
+    events: list[dict[str, object]]
     final_message: str
     usage: dict
     malformed_lines: int
 
 
 def parse_codex_jsonl(lines: Iterable[str]) -> ParsedEvents:
-    events: list[dict] = []
+    events: list[dict[str, object]] = []
     final_message = ""
     usage: dict = {}
     malformed_lines = 0
@@ -41,6 +41,8 @@ def parse_codex_jsonl(lines: Iterable[str]) -> ParsedEvents:
             malformed_lines += 1
             continue
 
+        if not isinstance(event, dict):
+            continue
         events.append(event)
         if event.get("type") == "item.completed":
             item = event.get("item", {})
@@ -136,6 +138,12 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Guardrail: output must include at least one file path citation",
     )
+    parser.add_argument(
+        "--timeout-seconds",
+        type=int,
+        default=300,
+        help="Timeout for codex exec in seconds",
+    )
     return parser
 
 
@@ -186,7 +194,33 @@ def main(argv: list[str] | None = None) -> int:
             profile=args.profile,
             codex_args=args.codex_arg,
         )
-        proc = subprocess.run(command, capture_output=True, text=True)
+        try:
+            proc = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=args.timeout_seconds,
+            )
+        except subprocess.TimeoutExpired:
+            return {
+                "command": command,
+                "prompt": prompt,
+                "returncode": 124,
+                "stderr": f"codex exec timed out after {args.timeout_seconds} seconds",
+                "events": [],
+                "malformed_lines": 0,
+                "usage": {},
+                "final_message": "",
+                "guardrails": evaluate_output(
+                    output={"text": "", "usage": {}},
+                    must_contain=args.must_contain,
+                    must_not_contain=args.must_not_contain,
+                    max_chars=args.max_chars,
+                    require_json=args.require_json,
+                    required_sections=args.required_section,
+                    require_file_paths=args.require_file_paths,
+                ),
+            }
         parsed = parse_codex_jsonl(proc.stdout.splitlines())
         guardrails = evaluate_output(
             output={"text": parsed.final_message, "usage": parsed.usage},

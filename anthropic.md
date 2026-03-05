@@ -6,7 +6,7 @@
 
 > Use Weave to automatically track and log LLM calls made via the Anthropic SDK
 
-<a target="_blank" href="https://colab.research.google.com/github/wandb/examples/blob/master/weave/docs/quickstart_anthropic.ipynb" aria-label="Open in Google Colab">
+<a target="_blank" rel="noopener noreferrer" href="https://colab.research.google.com/github/wandb/examples/blob/master/weave/docs/quickstart_anthropic.ipynb" aria-label="Open in Google Colab">
   <img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab" />
 </a>
 
@@ -14,7 +14,7 @@ When you integrate Weave into your code, it automatically tracks and logs LLM ca
 
 ## Traces
 
-Weave automatically captures traces for the Anthropic SDK when you add `weave.init("your-team-name/your-project-name")` to your code. If you don't specify a team name as an argument in `weave.init()`, Weave logs output to your [default W\&B entity](/platform/app/settings-page/user-settings/#default-team). If you don't specify a project name, Weave fails to initialize.
+Weave automatically captures traces for the Anthropic SDK when you add `weave.init("your-team-name/your-project-name")` to your code. If you don't specify a team name as an argument in `weave.init()`, Weave logs output to your [default W\&B entity](https://docs.wandb.ai/platform/app/settings-page/user-settings/#default-team). If you don't specify a project name, Weave fails to initialize.
 
 The following examples demonstrate how to integrate Weave into a basic call to Anthropic:
 
@@ -79,7 +79,7 @@ By including `weave.init()` in the code, Weave automatically captures tracing in
 
 ## Wrapping with your own ops
 
-Weave ops automatically version your code as you experiment, and capture its inputs and outputs. Decorated with [`@weave.op()`](https://docs.wandb.ai/weave/guides/tracking/ops) (Python) or wrapped with [`weave.op()`](/weave/reference/typescript-sdk/functions/op) (TypeScript) that calls into [`Anthropic.messages.create`](https://platform.claude.com/docs/en/build-with-claude/working-with-messages) and Weave tracks the inputs and outputs for you.
+Weave ops automatically version your code as you experiment, and capture its inputs and outputs. Decorated with [`@weave.op()`](https://docs.wandb.ai/weave/guides/tracking/ops) (Python) or wrapped with [`weave.op()`](https://docs.wandb.ai/weave/reference/typescript-sdk/functions/op) (TypeScript) that calls into [`Anthropic.messages.create`](https://platform.claude.com/docs/en/build-with-claude/working-with-messages) and Weave tracks the inputs and outputs for you.
 
 The following examples show you how to track a function:
 
@@ -167,9 +167,9 @@ By decorating or wrapping the function with `weave.op()`, Weave captures the fun
   The `weave.Model` class is only available in the Weave Python SDK. For TypeScript, use the `weave.op()` wrapper to track functions with structured parameters.
 </Note>
 
-Organizing experimentation is difficult when there are many moving pieces. By using the [`Model`](/weave/guides/core-types/models) class, you can capture and organize the experimental details of your app like your system prompt or the model you're using. This helps organize and compare different iterations of your app.
+Organizing experimentation is difficult when there are many moving pieces. By using the [`Model`](https://docs.wandb.ai/weave/guides/core-types/models) class, you can capture and organize the experimental details of your app like your system prompt or the model you're using. This helps organize and compare different iterations of your app.
 
-In addition to versioning code and capturing inputs/outputs, [`Model`](/weave/guides/core-types/models)s capture structured parameters that control your application's behavior. This can help you find which parameters work best. You can also use Weave Models with `serve`, and [`Evaluation`](/weave/guides/core-types/evaluations)s.
+In addition to versioning code and capturing inputs/outputs, [`Model`](https://docs.wandb.ai/weave/guides/core-types/models)s capture structured parameters that control your application's behavior. This can help you find which parameters work best. You can also use Weave Models with `serve`, and [`Evaluation`](https://docs.wandb.ai/weave/guides/core-types/evaluations)s.
 
 In the following example, you can experiment with `model` and `temperature`:
 

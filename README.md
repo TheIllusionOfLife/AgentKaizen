@@ -18,7 +18,7 @@ uv venv .venv
 uv sync --group dev
 ```
 
-`WANDB_API_KEY` can be provided via shell env or `.env.local`:
+The `WANDB_API_KEY` can be provided via the shell environment or a `.env.local` file:
 ```bash
 WANDB_API_KEY=your_key_here
 ```

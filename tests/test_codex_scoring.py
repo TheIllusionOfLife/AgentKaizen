@@ -70,3 +70,11 @@ def test_structure_scorers_fail_cases():
         codex_scoring.score_file_path_citations(output, require_file_paths=True)["pass"]
         is False
     )
+
+
+def test_score_token_usage_handles_invalid_values():
+    output = {"text": "ok", "usage": {"input_tokens": "abc", "output_tokens": None}}
+    token_result = codex_scoring.score_token_usage(output)
+    assert token_result["input_tokens"] == 0
+    assert token_result["output_tokens"] == 0
+    assert token_result["total_tokens"] == 0

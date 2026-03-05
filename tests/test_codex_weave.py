@@ -3,9 +3,68 @@ import pathlib
 import sys
 from types import SimpleNamespace
 
+import pytest
+
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 import codex_weave
+
+
+def _stdout(final_message: str, usage: dict[str, int] | None = None) -> str:
+    usage_obj = usage or {"input_tokens": 1, "output_tokens": 1}
+    return "\n".join(
+        [
+            json.dumps(
+                {
+                    "type": "item.completed",
+                    "item": {"type": "agent_message", "text": final_message},
+                }
+            ),
+            json.dumps({"type": "turn.completed", "usage": usage_obj}),
+        ]
+    )
+
+
+@pytest.fixture
+def fake_weave(monkeypatch):
+    class FakeWeave:
+        def init(self, _project):
+            return None
+
+        def op(self):
+            def deco(fn):
+                return fn
+
+            return deco
+
+    monkeypatch.setattr(codex_weave, "weave", FakeWeave())
+
+
+@pytest.fixture
+def fake_subprocess_run(monkeypatch):
+    def _install(
+        *,
+        final_message: str = "ok",
+        returncode: int = 0,
+        stderr: str = "",
+        usage: dict[str, int] | None = None,
+        raise_timeout: bool = False,
+    ):
+        def fake_run(cmd, capture_output, text, timeout):
+            del cmd, capture_output, text
+            if raise_timeout:
+                raise codex_weave.subprocess.TimeoutExpired(
+                    cmd="codex", timeout=timeout
+                )
+            return SimpleNamespace(
+                returncode=returncode,
+                stdout=_stdout(final_message, usage),
+                stderr=stderr,
+            )
+
+        monkeypatch.setattr(codex_weave.subprocess, "run", fake_run)
+
+    return _install
 
 
 def test_parse_codex_jsonl_extracts_output_usage_and_keeps_events():
@@ -46,6 +105,13 @@ def test_parse_codex_jsonl_tracks_malformed_lines():
     assert len(parsed.events) == 1
 
 
+def test_parse_codex_jsonl_ignores_non_dict_events():
+    parsed = codex_weave.parse_codex_jsonl(['"scalar"', "[]"])
+    assert parsed.events == []
+    assert parsed.final_message == ""
+    assert parsed.usage == {}
+
+
 def test_build_codex_command_includes_passed_options():
     cmd = codex_weave.build_codex_command(
         prompt="hello",
@@ -82,42 +148,14 @@ def test_load_wandb_api_key_from_env_file(tmp_path):
     assert loaded == "abc123"
 
 
-def test_main_reads_wandb_api_key_from_dotenv_local(monkeypatch, capsys, tmp_path):
+def test_main_reads_wandb_api_key_from_dotenv_local(
+    monkeypatch, capsys, tmp_path, fake_weave, fake_subprocess_run
+):
+    del fake_weave
     monkeypatch.delenv("WANDB_API_KEY", raising=False)
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".env.local").write_text("WANDB_API_KEY=x\n", encoding="utf-8")
-
-    class FakeWeave:
-        def init(self, _project):
-            return None
-
-        def op(self):
-            def deco(fn):
-                return fn
-
-            return deco
-
-    def fake_run(cmd, capture_output, text):
-        stdout = "\n".join(
-            [
-                json.dumps(
-                    {
-                        "type": "item.completed",
-                        "item": {"type": "agent_message", "text": "ok"},
-                    }
-                ),
-                json.dumps(
-                    {
-                        "type": "turn.completed",
-                        "usage": {"input_tokens": 1, "output_tokens": 1},
-                    }
-                ),
-            ]
-        )
-        return SimpleNamespace(returncode=0, stdout=stdout, stderr="")
-
-    monkeypatch.setattr(codex_weave, "weave", FakeWeave())
-    monkeypatch.setattr(codex_weave.subprocess, "run", fake_run)
+    fake_subprocess_run(final_message="ok")
 
     rc = codex_weave.main(["--prompt", "Say only: ok"])
 
@@ -126,40 +164,12 @@ def test_main_reads_wandb_api_key_from_dotenv_local(monkeypatch, capsys, tmp_pat
     assert out.out.strip() == "ok"
 
 
-def test_main_prints_final_message_and_propagates_exit(monkeypatch, capsys):
+def test_main_prints_final_message_and_propagates_exit(
+    monkeypatch, capsys, fake_weave, fake_subprocess_run
+):
+    del fake_weave
     monkeypatch.setenv("WANDB_API_KEY", "x")
-
-    class FakeWeave:
-        def init(self, _project):
-            return None
-
-        def op(self):
-            def deco(fn):
-                return fn
-
-            return deco
-
-    def fake_run(cmd, capture_output, text):
-        stdout = "\n".join(
-            [
-                json.dumps(
-                    {
-                        "type": "item.completed",
-                        "item": {"type": "agent_message", "text": "ok"},
-                    }
-                ),
-                json.dumps(
-                    {
-                        "type": "turn.completed",
-                        "usage": {"input_tokens": 1, "output_tokens": 1},
-                    }
-                ),
-            ]
-        )
-        return SimpleNamespace(returncode=0, stdout=stdout, stderr="")
-
-    monkeypatch.setattr(codex_weave, "weave", FakeWeave())
-    monkeypatch.setattr(codex_weave.subprocess, "run", fake_run)
+    fake_subprocess_run(final_message="ok", returncode=0)
 
     rc = codex_weave.main(["--prompt", "Say only: ok"])
 
@@ -168,40 +178,12 @@ def test_main_prints_final_message_and_propagates_exit(monkeypatch, capsys):
     assert out.out.strip() == "ok"
 
 
-def test_main_guardrail_warn_does_not_fail_exit(monkeypatch, capsys):
+def test_main_guardrail_warn_does_not_fail_exit(
+    monkeypatch, capsys, fake_weave, fake_subprocess_run
+):
+    del fake_weave
     monkeypatch.setenv("WANDB_API_KEY", "x")
-
-    class FakeWeave:
-        def init(self, _project):
-            return None
-
-        def op(self):
-            def deco(fn):
-                return fn
-
-            return deco
-
-    def fake_run(cmd, capture_output, text):
-        stdout = "\n".join(
-            [
-                json.dumps(
-                    {
-                        "type": "item.completed",
-                        "item": {"type": "agent_message", "text": "bad"},
-                    }
-                ),
-                json.dumps(
-                    {
-                        "type": "turn.completed",
-                        "usage": {"input_tokens": 1, "output_tokens": 1},
-                    }
-                ),
-            ]
-        )
-        return SimpleNamespace(returncode=0, stdout=stdout, stderr="")
-
-    monkeypatch.setattr(codex_weave, "weave", FakeWeave())
-    monkeypatch.setattr(codex_weave.subprocess, "run", fake_run)
+    fake_subprocess_run(final_message="bad", returncode=0)
 
     rc = codex_weave.main(
         [
@@ -219,40 +201,12 @@ def test_main_guardrail_warn_does_not_fail_exit(monkeypatch, capsys):
     assert "Guardrail violations" in out.err
 
 
-def test_main_guardrail_fail_sets_nonzero_exit(monkeypatch, capsys):
+def test_main_guardrail_fail_sets_nonzero_exit(
+    monkeypatch, capsys, fake_weave, fake_subprocess_run
+):
+    del fake_weave
     monkeypatch.setenv("WANDB_API_KEY", "x")
-
-    class FakeWeave:
-        def init(self, _project):
-            return None
-
-        def op(self):
-            def deco(fn):
-                return fn
-
-            return deco
-
-    def fake_run(cmd, capture_output, text):
-        stdout = "\n".join(
-            [
-                json.dumps(
-                    {
-                        "type": "item.completed",
-                        "item": {"type": "agent_message", "text": "bad"},
-                    }
-                ),
-                json.dumps(
-                    {
-                        "type": "turn.completed",
-                        "usage": {"input_tokens": 1, "output_tokens": 1},
-                    }
-                ),
-            ]
-        )
-        return SimpleNamespace(returncode=0, stdout=stdout, stderr="")
-
-    monkeypatch.setattr(codex_weave, "weave", FakeWeave())
-    monkeypatch.setattr(codex_weave.subprocess, "run", fake_run)
+    fake_subprocess_run(final_message="bad", returncode=0)
 
     rc = codex_weave.main(
         [
@@ -270,40 +224,12 @@ def test_main_guardrail_fail_sets_nonzero_exit(monkeypatch, capsys):
     assert "Guardrail violations" in out.err
 
 
-def test_main_guardrail_require_json(monkeypatch, capsys):
+def test_main_guardrail_require_json(
+    monkeypatch, capsys, fake_weave, fake_subprocess_run
+):
+    del fake_weave
     monkeypatch.setenv("WANDB_API_KEY", "x")
-
-    class FakeWeave:
-        def init(self, _project):
-            return None
-
-        def op(self):
-            def deco(fn):
-                return fn
-
-            return deco
-
-    def fake_run(cmd, capture_output, text):
-        stdout = "\n".join(
-            [
-                json.dumps(
-                    {
-                        "type": "item.completed",
-                        "item": {"type": "agent_message", "text": "not json"},
-                    }
-                ),
-                json.dumps(
-                    {
-                        "type": "turn.completed",
-                        "usage": {"input_tokens": 1, "output_tokens": 1},
-                    }
-                ),
-            ]
-        )
-        return SimpleNamespace(returncode=0, stdout=stdout, stderr="")
-
-    monkeypatch.setattr(codex_weave, "weave", FakeWeave())
-    monkeypatch.setattr(codex_weave.subprocess, "run", fake_run)
+    fake_subprocess_run(final_message="not json", returncode=0)
 
     rc = codex_weave.main(
         [
@@ -320,40 +246,12 @@ def test_main_guardrail_require_json(monkeypatch, capsys):
     assert "Guardrail violations" in out.err
 
 
-def test_main_guardrail_require_section_and_paths(monkeypatch, capsys):
+def test_main_guardrail_require_section_and_paths(
+    monkeypatch, capsys, fake_weave, fake_subprocess_run
+):
+    del fake_weave
     monkeypatch.setenv("WANDB_API_KEY", "x")
-
-    class FakeWeave:
-        def init(self, _project):
-            return None
-
-        def op(self):
-            def deco(fn):
-                return fn
-
-            return deco
-
-    def fake_run(cmd, capture_output, text):
-        stdout = "\n".join(
-            [
-                json.dumps(
-                    {
-                        "type": "item.completed",
-                        "item": {"type": "agent_message", "text": "no citation here"},
-                    }
-                ),
-                json.dumps(
-                    {
-                        "type": "turn.completed",
-                        "usage": {"input_tokens": 1, "output_tokens": 1},
-                    }
-                ),
-            ]
-        )
-        return SimpleNamespace(returncode=0, stdout=stdout, stderr="")
-
-    monkeypatch.setattr(codex_weave, "weave", FakeWeave())
-    monkeypatch.setattr(codex_weave.subprocess, "run", fake_run)
+    fake_subprocess_run(final_message="no citation here", returncode=0)
 
     rc = codex_weave.main(
         [
@@ -370,3 +268,17 @@ def test_main_guardrail_require_section_and_paths(monkeypatch, capsys):
     out = capsys.readouterr()
     assert rc == 3
     assert "Guardrail violations" in out.err
+
+
+def test_main_times_out_with_clear_error(
+    monkeypatch, capsys, fake_weave, fake_subprocess_run
+):
+    del fake_weave
+    monkeypatch.setenv("WANDB_API_KEY", "x")
+    fake_subprocess_run(raise_timeout=True)
+
+    rc = codex_weave.main(["--prompt", "hello", "--timeout-seconds", "1"])
+
+    out = capsys.readouterr()
+    assert rc == 124
+    assert "timed out" in out.err

@@ -77,6 +77,35 @@ def test_apply_variant_edits_rejects_unknown_mode(tmp_path):
         raise AssertionError("Expected ValueError")
 
 
+def test_apply_variant_edits_rejects_absolute_or_escaping_paths(tmp_path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / "AGENTS.md").write_text("x", encoding="utf-8")
+
+    absolute_variant = {
+        "name": "bad-abs",
+        "edits": [
+            {
+                "path": str((workspace / "AGENTS.md").resolve()),
+                "mode": "append",
+                "text": "x",
+            }
+        ],
+    }
+    escaping_variant = {
+        "name": "bad-escape",
+        "edits": [{"path": "../outside.txt", "mode": "append", "text": "x"}],
+    }
+
+    for variant in [absolute_variant, escaping_variant]:
+        try:
+            codex_evals.apply_variant_edits(workspace, variant)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("Expected ValueError")
+
+
 def test_scorers():
     assert (
         codex_evals.score_contains_all("hello world", ["hello", "world"])["pass"]
@@ -340,3 +369,53 @@ def test_main_returns_4_when_candidate_fails_gate(monkeypatch):
         ]
     )
     assert rc == 4
+
+
+def test_codex_variant_model_predict_timeout_raises_runtimeerror(monkeypatch):
+    model = codex_evals.CodexVariantModel(workspace="/tmp", timeout_seconds=1)
+
+    def fake_run(*_args, **_kwargs):
+        raise codex_evals.subprocess.TimeoutExpired(cmd="codex", timeout=1)
+
+    monkeypatch.setattr(codex_evals.subprocess, "run", fake_run)
+
+    try:
+        model.predict("hello")
+    except RuntimeError as exc:
+        assert "timed out" in str(exc)
+    else:
+        raise AssertionError("Expected RuntimeError")
+
+
+def test_regression_gate_handles_zero_baseline_values():
+    ranked = codex_evals.rank_variant_results(
+        [
+            {
+                "variant": "baseline",
+                "summary": {
+                    "score_contains_all": {"pass": {"true_fraction": 1.0}},
+                    "score_forbidden_absent": {"pass": {"true_fraction": 1.0}},
+                    "score_max_chars": {"pass": {"true_fraction": 1.0}},
+                    "score_token_usage": {"total_tokens": {"mean": 0.0}},
+                    "model_latency": {"mean": 0.0},
+                },
+            },
+            {
+                "variant": "candidate",
+                "summary": {
+                    "score_contains_all": {"pass": {"true_fraction": 1.0}},
+                    "score_forbidden_absent": {"pass": {"true_fraction": 1.0}},
+                    "score_max_chars": {"pass": {"true_fraction": 1.0}},
+                    "score_token_usage": {"total_tokens": {"mean": 1.0}},
+                    "model_latency": {"mean": 1.0},
+                },
+            },
+        ],
+        quality_similar_threshold=0.02,
+        latency_regression_threshold=0.2,
+        token_regression_threshold=0.2,
+    )
+    candidate = next(item for item in ranked if item["variant"] == "candidate")
+    assert candidate["gate_pass"] is False
+    assert "latency_regression" in candidate["gate_reason"]
+    assert "token_regression" in candidate["gate_reason"]

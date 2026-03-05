@@ -44,11 +44,16 @@ def load_variant_file(path: Path) -> dict[str, Any]:
 
 def apply_variant_edits(workspace: Path, variant: dict[str, Any]) -> None:
     edits = variant.get("edits", [])
+    workspace_resolved = workspace.resolve()
     for edit in edits:
-        rel_path = edit["path"]
+        rel_path = Path(edit["path"])
         mode = edit["mode"]
         text = edit["text"]
-        target = workspace / rel_path
+        if rel_path.is_absolute():
+            raise ValueError(f"Variant edit path must be relative: {rel_path}")
+        target = (workspace_resolved / rel_path).resolve()
+        if not target.is_relative_to(workspace_resolved):
+            raise ValueError(f"Variant edit path escapes workspace: {rel_path}")
 
         if not target.exists():
             raise FileNotFoundError(f"Variant edit target not found: {rel_path}")
@@ -104,6 +109,7 @@ class CodexVariantModel(weave.Model):
     sandbox: str | None = None
     profile: str | None = None
     codex_args: list[str] = []
+    timeout_seconds: int = 300
 
     @weave.op()
     def predict(self, prompt: str) -> dict[str, Any]:
@@ -117,12 +123,22 @@ class CodexVariantModel(weave.Model):
         command.extend(normalize_codex_args(self.codex_args))
         command.append(prompt)
 
-        proc = subprocess.run(command, capture_output=True, text=True)
-        parsed = parse_codex_jsonl(proc.stdout.splitlines())
+        try:
+            proc = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=self.timeout_seconds,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(
+                f"codex exec timed out after {self.timeout_seconds} seconds"
+            ) from exc
         if proc.returncode != 0:
             raise RuntimeError(
                 f"codex exec failed (exit={proc.returncode}): {proc.stderr.strip()}"
             )
+        parsed = parse_codex_jsonl(proc.stdout.splitlines())
         return {"text": parsed.final_message, "usage": parsed.usage}
 
 
@@ -169,6 +185,12 @@ def _build_parser() -> argparse.ArgumentParser:
         type=float,
         default=0.20,
         help="Fail when candidate token usage exceeds baseline by this fraction",
+    )
+    parser.add_argument(
+        "--timeout-seconds",
+        type=int,
+        default=300,
+        help="Timeout for each codex exec call in seconds",
     )
     return parser
 
@@ -282,14 +304,14 @@ def rank_variant_results(
             quality_similar = abs(quality_delta) <= quality_similar_threshold
             if quality_similar:
                 if (
-                    baseline_latency
+                    baseline_latency is not None
                     and latency_mean is not None
                     and latency_mean
                     > baseline_latency * (1 + latency_regression_threshold)
                 ):
                     reasons.append("latency_regression")
                 if (
-                    baseline_tokens
+                    baseline_tokens is not None
                     and token_mean is not None
                     and token_mean > baseline_tokens * (1 + token_regression_threshold)
                 ):
@@ -363,6 +385,7 @@ def main(argv: list[str] | None = None) -> int:
                 sandbox=args.sandbox,
                 profile=args.profile,
                 codex_args=args.codex_arg,
+                timeout_seconds=args.timeout_seconds,
             )
             evaluation = weave.Evaluation(
                 name=f"codex-doc-impact-{variant['name']}",

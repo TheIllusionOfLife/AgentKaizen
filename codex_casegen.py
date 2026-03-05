@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import re
 from pathlib import Path
 from typing import Any
@@ -10,6 +11,8 @@ import weave
 from weave.trace.context import weave_client_context
 
 from codex_weave import DEFAULT_ENTITY, DEFAULT_PROJECT, ensure_wandb_api_key
+
+logger = logging.getLogger(__name__)
 
 
 def build_case_from_call_output(
@@ -75,6 +78,7 @@ def fetch_recent_codex_cases(
 ) -> list[dict[str, Any]]:
     client = weave_client_context.get_weave_client()
     cases: list[dict[str, Any]] = []
+    seen_prompts: set[str] = set()
 
     calls_iter = client.get_calls(
         limit=max(limit * 5, 50),
@@ -89,7 +93,12 @@ def fetch_recent_codex_cases(
         output_obj = getattr(call, "output", None)
         try:
             output = dict(output_obj) if output_obj is not None else {}
-        except Exception:
+        except (TypeError, ValueError):
+            logger.warning(
+                "Skipping call with non-dict output payload: op_name=%s output=%r",
+                op_name,
+                output_obj,
+            )
             continue
 
         if not isinstance(output, dict):
@@ -101,11 +110,14 @@ def fetch_recent_codex_cases(
 
         case = build_case_from_call_output(output, max_chars_padding=max_chars_padding)
         case["prompt"] = redact_prompt(case["prompt"], redact_patterns)
+        if case["prompt"] in seen_prompts:
+            continue
+        seen_prompts.add(case["prompt"])
         cases.append(case)
         if len(cases) >= limit:
             break
 
-    return deduplicate_cases_by_prompt(cases)[:limit]
+    return cases[:limit]
 
 
 def _build_parser() -> argparse.ArgumentParser:
