@@ -73,10 +73,19 @@ Create draft eval cases from recent `codex-weave` traces:
 ```bash
 uv run codex-casegen \
   --limit 20 \
-  --output /Users/yuyamukai/dev/AgentKaizen/evals/cases.generated.jsonl
+  --output evals/cases.generated.jsonl
 ```
 
 Then review and refine generated checks (`must_contain`, `must_not_contain`, `max_chars`).
+
+Optional redaction for sensitive prompt fragments:
+```bash
+uv run codex-casegen \
+  --limit 20 \
+  --output evals/cases.generated.jsonl \
+  --redact-regex 'sk-[A-Za-z0-9]+' \
+  --redact-regex '[\\w.-]+@[\\w.-]+'
+```
 
 ## Offline Evals (Doc Impact)
 Run baseline + variants on the same case set:

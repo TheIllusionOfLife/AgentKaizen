@@ -205,17 +205,42 @@ def _extract_mean(
     return float(value)
 
 
-def _quality_score(summary: dict[str, Any]) -> float:
-    quality_keys = [
-        "score_contains_all",
-        "score_forbidden_absent",
-        "score_max_chars",
-        "score_json_validity",
-        "score_required_sections",
-        "score_file_path_citations",
-    ]
+def _quality_score(summary: dict[str, Any], quality_keys: list[str]) -> float:
     values = [_extract_true_fraction(summary, key) for key in quality_keys]
     return sum(values) / len(values)
+
+
+def _active_quality_keys(summary: dict[str, Any]) -> list[str]:
+    keys = ["score_contains_all", "score_forbidden_absent", "score_max_chars"]
+
+    json_required_fraction = float(
+        summary.get("score_json_validity", {})
+        .get("require_json", {})
+        .get("true_fraction", 0.0)
+        or 0.0
+    )
+    if json_required_fraction > 0.0:
+        keys.append("score_json_validity")
+
+    required_sections_mean = float(
+        summary.get("score_required_sections", {})
+        .get("required_count", {})
+        .get("mean", 0.0)
+        or 0.0
+    )
+    if required_sections_mean > 0.0:
+        keys.append("score_required_sections")
+
+    require_paths_fraction = float(
+        summary.get("score_file_path_citations", {})
+        .get("require_file_paths", {})
+        .get("true_fraction", 0.0)
+        or 0.0
+    )
+    if require_paths_fraction > 0.0:
+        keys.append("score_file_path_citations")
+
+    return keys
 
 
 def rank_variant_results(
@@ -229,7 +254,14 @@ def rank_variant_results(
         (item for item in results if item["variant"] == "baseline"), None
     )
     baseline_summary = baseline_item["summary"] if baseline_item else {}
-    baseline_quality = _quality_score(baseline_summary) if baseline_item else 0.0
+    active_quality_keys = (
+        _active_quality_keys(baseline_summary)
+        if baseline_item
+        else ["score_contains_all", "score_forbidden_absent", "score_max_chars"]
+    )
+    baseline_quality = (
+        _quality_score(baseline_summary, active_quality_keys) if baseline_item else 0.0
+    )
     baseline_latency = _extract_mean(baseline_summary, "model_latency")
     baseline_tokens = _extract_mean(
         baseline_summary, "score_token_usage", "total_tokens"
@@ -238,7 +270,7 @@ def rank_variant_results(
     ranked: list[dict[str, Any]] = []
     for result in results:
         summary = result["summary"]
-        quality_score = _quality_score(summary)
+        quality_score = _quality_score(summary, active_quality_keys)
         latency_mean = _extract_mean(summary, "model_latency")
         token_mean = _extract_mean(summary, "score_token_usage", "total_tokens")
         quality_delta = quality_score - baseline_quality
@@ -247,7 +279,7 @@ def rank_variant_results(
         gate_reason = "baseline"
         if result["variant"] != "baseline":
             reasons: list[str] = []
-            quality_similar = quality_delta <= quality_similar_threshold
+            quality_similar = abs(quality_delta) <= quality_similar_threshold
             if quality_similar:
                 if (
                     baseline_latency

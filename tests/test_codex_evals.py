@@ -198,3 +198,145 @@ def test_regression_gate_fails_when_quality_similar_and_latency_worse():
     candidate = next(item for item in ranked if item["variant"] == "candidate")
     assert candidate["gate_pass"] is False
     assert "latency_regression" in candidate["gate_reason"]
+
+
+def test_regression_gate_does_not_fire_when_quality_not_similar():
+    ranked = codex_evals.rank_variant_results(
+        [
+            {
+                "variant": "baseline",
+                "summary": {
+                    "score_contains_all": {"pass": {"true_fraction": 1.0}},
+                    "score_forbidden_absent": {"pass": {"true_fraction": 1.0}},
+                    "score_max_chars": {"pass": {"true_fraction": 1.0}},
+                    "score_token_usage": {"total_tokens": {"mean": 100.0}},
+                    "model_latency": {"mean": 1.0},
+                },
+            },
+            {
+                "variant": "candidate",
+                "summary": {
+                    "score_contains_all": {"pass": {"true_fraction": 0.0}},
+                    "score_forbidden_absent": {"pass": {"true_fraction": 0.0}},
+                    "score_max_chars": {"pass": {"true_fraction": 0.0}},
+                    "score_token_usage": {"total_tokens": {"mean": 300.0}},
+                    "model_latency": {"mean": 3.0},
+                },
+            },
+        ],
+        quality_similar_threshold=0.02,
+        latency_regression_threshold=0.2,
+        token_regression_threshold=0.2,
+    )
+    candidate = next(item for item in ranked if item["variant"] == "candidate")
+    assert candidate["gate_pass"] is True
+
+
+def test_quality_score_uses_baseline_active_checks_only():
+    ranked = codex_evals.rank_variant_results(
+        [
+            {
+                "variant": "baseline",
+                "summary": {
+                    "score_contains_all": {"pass": {"true_fraction": 1.0}},
+                    "score_forbidden_absent": {"pass": {"true_fraction": 1.0}},
+                    "score_max_chars": {"pass": {"true_fraction": 1.0}},
+                    "score_json_validity": {
+                        "pass": {"true_fraction": 0.0},
+                        "require_json": {"true_fraction": 0.0},
+                    },
+                    "score_required_sections": {
+                        "pass": {"true_fraction": 0.0},
+                        "required_count": {"mean": 0.0},
+                    },
+                    "score_file_path_citations": {
+                        "pass": {"true_fraction": 0.0},
+                        "require_file_paths": {"true_fraction": 0.0},
+                    },
+                    "score_token_usage": {"total_tokens": {"mean": 100.0}},
+                    "model_latency": {"mean": 1.0},
+                },
+            },
+            {
+                "variant": "candidate",
+                "summary": {
+                    "score_contains_all": {"pass": {"true_fraction": 1.0}},
+                    "score_forbidden_absent": {"pass": {"true_fraction": 1.0}},
+                    "score_max_chars": {"pass": {"true_fraction": 1.0}},
+                    "score_json_validity": {
+                        "pass": {"true_fraction": 0.0},
+                        "require_json": {"true_fraction": 1.0},
+                    },
+                    "score_required_sections": {
+                        "pass": {"true_fraction": 0.0},
+                        "required_count": {"mean": 2.0},
+                    },
+                    "score_file_path_citations": {
+                        "pass": {"true_fraction": 0.0},
+                        "require_file_paths": {"true_fraction": 1.0},
+                    },
+                    "score_token_usage": {"total_tokens": {"mean": 100.0}},
+                    "model_latency": {"mean": 1.0},
+                },
+            },
+        ],
+        quality_similar_threshold=0.02,
+        latency_regression_threshold=0.2,
+        token_regression_threshold=0.2,
+    )
+    candidate = next(item for item in ranked if item["variant"] == "candidate")
+    assert candidate["quality_score"] == 1.0
+
+
+def test_main_returns_4_when_candidate_fails_gate(monkeypatch):
+    monkeypatch.setattr(codex_evals, "ensure_wandb_api_key", lambda: "x")
+    monkeypatch.setattr(codex_evals.weave, "init", lambda _project: None)
+    monkeypatch.setattr(
+        codex_evals, "load_cases_jsonl", lambda _path: [{"prompt": "p"}]
+    )
+    monkeypatch.setattr(
+        codex_evals,
+        "_variants_from_args",
+        lambda _paths: [
+            {"name": "baseline", "edits": []},
+            {"name": "candidate", "edits": []},
+        ],
+    )
+    monkeypatch.setattr(codex_evals, "copy_workspace", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        codex_evals, "apply_variant_edits", lambda *_args, **_kwargs: None
+    )
+
+    class FakeEvaluation:
+        def __init__(self, name, dataset, scorers):
+            self.name = name
+
+        def evaluate(self, model):
+            if self.name.endswith("baseline"):
+                return {
+                    "score_contains_all": {"pass": {"true_fraction": 1.0}},
+                    "score_forbidden_absent": {"pass": {"true_fraction": 1.0}},
+                    "score_max_chars": {"pass": {"true_fraction": 1.0}},
+                    "score_token_usage": {"total_tokens": {"mean": 100.0}},
+                    "model_latency": {"mean": 1.0},
+                }
+            return {
+                "score_contains_all": {"pass": {"true_fraction": 1.0}},
+                "score_forbidden_absent": {"pass": {"true_fraction": 1.0}},
+                "score_max_chars": {"pass": {"true_fraction": 1.0}},
+                "score_token_usage": {"total_tokens": {"mean": 200.0}},
+                "model_latency": {"mean": 2.0},
+            }
+
+    monkeypatch.setattr(codex_evals.weave, "Evaluation", FakeEvaluation)
+    monkeypatch.setattr(codex_evals.asyncio, "run", lambda result: result)
+
+    rc = codex_evals.main(
+        [
+            "--cases",
+            "dummy.jsonl",
+            "--variant-file",
+            "dummy_variant.json",
+        ]
+    )
+    assert rc == 4

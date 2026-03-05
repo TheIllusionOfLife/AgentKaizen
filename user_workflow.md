@@ -24,9 +24,10 @@ Use measurable experiments to improve Codex outputs by iterating on foundational
 ```bash
 uv run codex-casegen \
   --limit 20 \
-  --output /Users/yuyamukai/dev/AgentKaizen/evals/cases.generated.jsonl
+  --output evals/cases.generated.jsonl
 ```
 - Treat this as a draft; refine checks before relying on scores.
+- Use `--redact-regex` when prompts may include sensitive strings.
 
 5. Run offline comparison
 ```bash

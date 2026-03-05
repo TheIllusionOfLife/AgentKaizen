@@ -318,3 +318,55 @@ def test_main_guardrail_require_json(monkeypatch, capsys):
     out = capsys.readouterr()
     assert rc == 3
     assert "Guardrail violations" in out.err
+
+
+def test_main_guardrail_require_section_and_paths(monkeypatch, capsys):
+    monkeypatch.setenv("WANDB_API_KEY", "x")
+
+    class FakeWeave:
+        def init(self, _project):
+            return None
+
+        def op(self):
+            def deco(fn):
+                return fn
+
+            return deco
+
+    def fake_run(cmd, capture_output, text):
+        stdout = "\n".join(
+            [
+                json.dumps(
+                    {
+                        "type": "item.completed",
+                        "item": {"type": "agent_message", "text": "no citation here"},
+                    }
+                ),
+                json.dumps(
+                    {
+                        "type": "turn.completed",
+                        "usage": {"input_tokens": 1, "output_tokens": 1},
+                    }
+                ),
+            ]
+        )
+        return SimpleNamespace(returncode=0, stdout=stdout, stderr="")
+
+    monkeypatch.setattr(codex_weave, "weave", FakeWeave())
+    monkeypatch.setattr(codex_weave.subprocess, "run", fake_run)
+
+    rc = codex_weave.main(
+        [
+            "--prompt",
+            "Return answer",
+            "--required-section",
+            "Summary",
+            "--require-file-paths",
+            "--guardrail-mode",
+            "fail",
+        ]
+    )
+
+    out = capsys.readouterr()
+    assert rc == 3
+    assert "Guardrail violations" in out.err

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +24,13 @@ def build_case_from_call_output(
         "must_not_contain": [],
         "max_chars": max_chars,
     }
+
+
+def redact_prompt(prompt: str, redact_patterns: list[str]) -> str:
+    redacted = prompt
+    for pattern in redact_patterns:
+        redacted = re.sub(pattern, "[REDACTED]", redacted)
+    return redacted
 
 
 def deduplicate_cases_by_prompt(cases: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -60,6 +68,7 @@ def fetch_recent_codex_cases(
     limit: int,
     op_substring: str,
     max_chars_padding: int,
+    redact_patterns: list[str],
 ) -> list[dict[str, Any]]:
     client = weave_client_context.get_weave_client()
     cases: list[dict[str, Any]] = []
@@ -88,6 +97,7 @@ def fetch_recent_codex_cases(
             continue
 
         case = build_case_from_call_output(output, max_chars_padding=max_chars_padding)
+        case["prompt"] = redact_prompt(case["prompt"], redact_patterns)
         cases.append(case)
         if len(cases) >= limit:
             break
@@ -123,6 +133,12 @@ def _build_parser() -> argparse.ArgumentParser:
         default="run_codex_exec_traced",
         help="Only use calls whose op_name contains this value",
     )
+    parser.add_argument(
+        "--redact-regex",
+        action="append",
+        default=[],
+        help="Regex pattern to redact from prompts before writing cases (repeatable)",
+    )
     return parser
 
 
@@ -140,6 +156,7 @@ def main(argv: list[str] | None = None) -> int:
         limit=args.limit,
         op_substring=args.op_substring,
         max_chars_padding=args.max_chars_padding,
+        redact_patterns=args.redact_regex,
     )
 
     out_path = Path(args.output).expanduser().resolve()

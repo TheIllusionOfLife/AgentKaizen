@@ -32,3 +32,11 @@ def test_deduplicate_cases_by_prompt_keeps_first():
 
     assert [c["prompt"] for c in deduped] == ["p1", "p2"]
     assert deduped[0]["max_chars"] == 10
+
+
+def test_redact_prompt_applies_patterns():
+    prompt = "token=abc123 and email user@example.com"
+    redacted = codex_casegen.redact_prompt(prompt, [r"abc123", r"[\w.-]+@[\w.-]+"])
+    assert "[REDACTED]" in redacted
+    assert "abc123" not in redacted
+    assert "user@example.com" not in redacted
