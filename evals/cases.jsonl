@@ -1,2 +1,2 @@
-{"prompt":"Say only: ok","must_contain":["ok"],"must_not_contain":["sorry"],"max_chars":40}
-{"prompt":"Reply in one sentence: what does this repository do?","must_contain":[],"must_not_contain":["I cannot"],"max_chars":220}
+{"prompt":"Say only: ok","must_contain":["ok"],"must_not_contain":["sorry"],"max_chars":40,"require_json":false,"required_sections":[],"require_file_paths":false}
+{"prompt":"Reply in one sentence: what does this repository do?","must_contain":[],"must_not_contain":["I cannot"],"max_chars":220,"require_json":false,"required_sections":[],"require_file_paths":false}

@@ -23,6 +23,9 @@ def build_case_from_call_output(
         "must_contain": [],
         "must_not_contain": [],
         "max_chars": max_chars,
+        "require_json": False,
+        "required_sections": [],
+        "require_file_paths": False,
     }
 
 

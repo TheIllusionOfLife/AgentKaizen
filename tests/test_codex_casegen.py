@@ -19,6 +19,9 @@ def test_build_case_from_call_output():
     assert case["must_contain"] == []
     assert case["must_not_contain"] == []
     assert case["max_chars"] == len("This repo tracks codex outputs.") + 20
+    assert case["require_json"] is False
+    assert case["required_sections"] == []
+    assert case["require_file_paths"] is False
 
 
 def test_deduplicate_cases_by_prompt_keeps_first():

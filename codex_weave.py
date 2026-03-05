@@ -189,7 +189,7 @@ def main(argv: list[str] | None = None) -> int:
         proc = subprocess.run(command, capture_output=True, text=True)
         parsed = parse_codex_jsonl(proc.stdout.splitlines())
         guardrails = evaluate_output(
-            output=parsed.final_message,
+            output={"text": parsed.final_message, "usage": parsed.usage},
             must_contain=args.must_contain,
             must_not_contain=args.must_not_contain,
             max_chars=args.max_chars,
