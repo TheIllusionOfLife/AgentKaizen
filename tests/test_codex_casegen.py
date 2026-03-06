@@ -6,6 +6,8 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 import codex_casegen
 
+from conftest import set_wandb_target_env
+
 
 def test_build_case_from_call_output():
     call_output = {
@@ -144,6 +146,7 @@ def test_fetch_recent_interactive_cases_dedupes_by_thread_name(monkeypatch):
 
 def test_main_include_interactive_respects_limit(monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(codex_casegen, "ensure_wandb_api_key", lambda: "x")
+    set_wandb_target_env(monkeypatch)
     monkeypatch.setattr(
         codex_casegen, "weave", SimpleNamespace(init=lambda *_args, **_kwargs: None)
     )

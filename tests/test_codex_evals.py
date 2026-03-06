@@ -7,6 +7,8 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 import codex_evals
 
+from conftest import set_wandb_target_env
+
 
 def test_load_cases_jsonl_reads_all_rows(tmp_path):
     path = tmp_path / "cases.jsonl"
@@ -446,6 +448,7 @@ def test_quality_score_uses_baseline_active_checks_only():
 
 def test_main_returns_4_when_candidate_fails_gate(monkeypatch):
     monkeypatch.setattr(codex_evals, "ensure_wandb_api_key", lambda: "x")
+    set_wandb_target_env(monkeypatch)
     monkeypatch.setattr(codex_evals.weave, "init", lambda _project: None)
     monkeypatch.setattr(
         codex_evals, "load_cases_jsonl", lambda _path: [{"prompt": "p"}]

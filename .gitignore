@@ -5,6 +5,10 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+build/
+dist/
+htmlcov/
+.coverage
 
 # Virtual env and local secrets
 .venv/
@@ -12,6 +16,9 @@ __pycache__/
 .env.*
 .env.*.local
 .env.local
+
+# Generated eval outputs
+evals/cases.generated.jsonl
 
 # OS/editor noise
 .DS_Store

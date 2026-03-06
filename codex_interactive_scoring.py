@@ -9,7 +9,7 @@ from typing import Any
 
 import weave
 
-from codex_weave import DEFAULT_ENTITY, DEFAULT_PROJECT, ensure_wandb_api_key
+from codex_weave import ensure_wandb_api_key, resolve_weave_project
 
 ALLOWED_RELEVANCE = {"agents", "readme", "skill", "config", "none"}
 ALLOWED_SCORING_BACKENDS = {"subagent", "external"}
@@ -498,8 +498,8 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Score interactive Codex sessions with heuristics and a structured scorer"
     )
-    parser.add_argument("--entity", default=DEFAULT_ENTITY)
-    parser.add_argument("--project", default=DEFAULT_PROJECT)
+    parser.add_argument("--entity")
+    parser.add_argument("--project")
     parser.add_argument("--trace-file", help="Path to a saved interactive trace JSON")
     parser.add_argument("--judge-model", help="Codex model for the session judge")
     parser.add_argument(
@@ -524,8 +524,13 @@ def main(argv: list[str] | None = None) -> int:
     if not ensure_wandb_api_key():
         print("WANDB_API_KEY is required to score interactive traces.", file=sys.stderr)
         return 2
+    try:
+        project_path = resolve_weave_project(args.entity, args.project)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
 
-    weave.init(f"{args.entity}/{args.project}")
+    weave.init(project_path)
     if not args.trace_file:
         print("--trace-file is required.", file=sys.stderr)
         return 2

@@ -1,3 +1,6 @@
+> Reference note:
+> This file is imported reference material about Weave and Anthropic integrations. It is not the main source of truth for AgentKaizen behavior.
+>
 > ## Documentation Index
 > Fetch the complete documentation index at: https://docs.wandb.ai/llms.txt
 > Use this file to discover all available pages before exploring further.

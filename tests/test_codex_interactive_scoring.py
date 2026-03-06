@@ -7,6 +7,8 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 import codex_interactive_scoring
 
+from conftest import set_wandb_target_env
+
 
 def test_score_interactive_heuristics_flags_success_and_workflow():
     trace = {
@@ -317,6 +319,7 @@ def test_main_uses_context_manager_and_subagent_backend(monkeypatch, tmp_path, c
         encoding="utf-8",
     )
     monkeypatch.setattr(codex_interactive_scoring, "ensure_wandb_api_key", lambda: "x")
+    set_wandb_target_env(monkeypatch)
     monkeypatch.setattr(
         codex_interactive_scoring,
         "weave",
@@ -408,6 +411,7 @@ def test_main_can_emit_json_with_flag(monkeypatch, tmp_path, capsys):
         encoding="utf-8",
     )
     monkeypatch.setattr(codex_interactive_scoring, "ensure_wandb_api_key", lambda: "x")
+    set_wandb_target_env(monkeypatch)
     monkeypatch.setattr(
         codex_interactive_scoring,
         "weave",

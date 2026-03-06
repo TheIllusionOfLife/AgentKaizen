@@ -1,42 +1,91 @@
 # Repository Guidelines
 
-## Project Structure & Module Organization
-This repository is a lightweight Python toolkit for tracing and evaluating Codex CLI behavior with W&B Weave.
-- Core runtime modules: `codex_weave.py` (exec trace wrapper), `codex_interactive_sync.py` (interactive session ingester), `codex_evals.py` (offline eval runner), `codex_scoring.py` (shared scorers).
-- CLI entry scripts are exposed through `pyproject.toml` (`codex-weave`, `codex-weave-sync-interactive`, `codex-eval`, `codex-casegen`).
-- Evaluation assets live under `evals/`:
-  - `evals/cases.jsonl` for prompt test cases
-  - `evals/variants/*.json` for document-edit variants
-- Tests live in `tests/` and mirror module responsibilities.
+## Purpose
+This repository exists to improve CLI-based AI agent behavior with measurable feedback loops. The main product question is not just "can Codex solve a task?" but "which steering surface changed the behavior, and did it help enough to keep?"
 
-## Build, Test, and Development Commands
-Use `uv` for all Python workflow tasks.
-- `uv run codex-weave --prompt "Say only: ok"`: run Codex with Weave tracing.
-- `uv run codex-weave-sync-interactive --once`: ingest completed interactive Codex sessions from local session files.
-- `uv run codex-eval --cases evals/cases.jsonl --variant-file <file>`: compare baseline vs variant docs using Weave Evals.
-- `uv run codex-casegen --limit 20 --output evals/cases.generated.jsonl`: draft eval cases from recent traces.
-- `uv run --group dev pytest`: run all tests.
-- `uv run --with ruff ruff check .`: lint.
-- `uv run --with ruff ruff format --check .`: formatting check.
+Important steering surfaces in this repo include:
+- `AGENTS.md`
+- `README.md`
+- eval cases and variants
+- external skill documents
+- Codex CLI configuration and profiles
 
-## Coding Style & Naming Conventions
-- Follow Python 3.12+ style with 4-space indentation and type hints for public functions.
-- Use `snake_case` for functions, files, and variables.
-- Keep modules focused (single responsibility); share scoring logic via `codex_scoring.py`.
-- Run Ruff lint + format checks before submitting changes.
+## Required Environment
+Live Weave workflows require all of the following:
+- `WANDB_API_KEY`
+- `WANDB_ENTITY`
+- `WANDB_PROJECT`
 
-## Testing Guidelines
-- Framework: `pytest`.
-- Add tests for new behavior and regression paths (especially CLI argument handling and exit codes).
-- Test files should be named `tests/test_<module>.py`; test names should describe expected behavior.
-- Prefer fast unit tests with monkeypatching for subprocess/Weave interactions.
+Do not hardcode personal W&B entity or project values in code, docs, examples, or tests.
 
-## Commit & Pull Request Guidelines
-Git history is currently minimal (`Initial commit`), so use clear Conventional Commit style going forward (for example, `feat: add guardrail fail mode`).
-- Keep commits scoped to one logical change.
-- PRs should include: purpose, key behavior changes, test evidence (commands + results), and any W&B/CLI usage notes.
+## Commands You Should Use
+Use `uv` for all Python workflows.
 
-## Security & Configuration Tips
-- Keep secrets in `.env.local` (`WANDB_API_KEY=...`) and never commit them.
-- For live tracing/demo workflows, check `.env.local` before concluding `WANDB_API_KEY` is unavailable.
-- Validate guardrails with `--guardrail-mode warn` before enforcing `fail` in automation.
+Common commands:
+- `uv sync --group dev`
+- `uv run codex-weave --prompt "Say only: ok"`
+- `uv run codex-weave-sync-interactive --once`
+- `uv run codex-score-interactive --trace-file path/to/interactive-trace.json`
+- `uv run codex-casegen --limit 20 --output evals/cases.generated.jsonl`
+- `uv run codex-eval --cases evals/cases.jsonl --variant-file evals/variants/<file>.json`
+- `uv run --group dev pytest`
+- `uv run --with ruff ruff check .`
+- `uv run --with ruff ruff format --check .`
+
+## Architecture Rules
+- Keep top-level modules focused by responsibility.
+- Put shared output and quality checks in `codex_scoring.py`.
+- Keep `codex_weave.py` responsible for traced `codex exec` runs.
+- Keep `codex_interactive_sync.py` responsible for turning local session files into structured Weave traces.
+- Keep `codex_interactive_scoring.py` responsible for analyzing interactive trace payloads, not for ingestion.
+- Keep `codex_evals.py` responsible for offline variant comparison using temporary workspaces.
+- Keep `codex_casegen.py` responsible for turning past traces into draft evaluation cases.
+
+## Coding Style
+- Python 3.12+
+- Type hints for public functions
+- `snake_case` for functions, variables, and modules
+- Prefer small, composable helpers over large multi-purpose functions
+- Follow existing CLI patterns for exit codes and stderr messaging
+
+## Testing
+- Framework: `pytest`
+- Preferred command: `uv run --group dev pytest`
+- Lint: `uv run --with ruff ruff check .`
+- Format check: `uv run --with ruff ruff format --check .`
+
+When changing CLI behavior:
+- add or update tests for exit codes and error messages
+- keep README examples aligned with the real CLI contract
+- verify CI still runs the same commands documented in the repo
+
+## Repository Etiquette
+- Create a feature branch before making changes
+- Use clear Conventional Commit style messages
+- Keep each commit scoped to one logical change
+- Never push directly to `main`
+- Do not merge unless explicitly asked
+
+## Non-Obvious Behaviors
+- W&B entity and project must be passed explicitly or provided through `WANDB_ENTITY` and `WANDB_PROJECT`.
+- `codex exec --json` returns JSONL event streams, not a single JSON object. Reuse `parse_codex_jsonl()` instead of inventing a new parser.
+- Interactive sync seeds the state file on the first run and uploads nothing on that initial pass. This prevents backfilling the entire local history unexpectedly.
+- Interactive trace redaction is enabled by default. Preserve that default unless there is a strong reason to change it.
+- Offline evals compare variants inside temporary workspaces. Do not mutate the real repo as part of evaluation logic.
+- Interactive scoring has two paths: a default structured local analysis path and an older external Codex-judge path. Prefer the default path unless you are intentionally changing the judge behavior.
+
+## Common Gotchas
+- Do not reintroduce personal or repo-owner-specific defaults for Weave targets.
+- Do not duplicate the same test environment values in many files. Use shared helpers from `tests/conftest.py`.
+- Do not change CLI flags or required env vars without updating:
+  - `README.md`
+  - `AGENTS.md`
+  - tests
+  - any affected workflow docs
+- Do not treat imported vendor reference docs as canonical project behavior. Project-owned docs in the root and `docs/workflows/` are the source of truth for this repo.
+
+## How To Avoid Past Review Problems
+- Keep docs, tests, and implementation synchronized when changing behavior.
+- Prefer one shared helper over repeated literals in tests and examples.
+- Keep evaluation logic measurable and explicit; avoid hidden defaults that make results hard to reproduce.
+- When adding a new steering surface, document how it participates in the eval loop so future contributors can reason about impact.

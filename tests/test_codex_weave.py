@@ -9,6 +9,8 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 import codex_weave
 
+from conftest import set_wandb_target_env
+
 
 def _stdout(final_message: str, usage: dict[str, int] | None = None) -> str:
     usage_obj = usage or {"input_tokens": 1, "output_tokens": 1}
@@ -148,11 +150,46 @@ def test_load_wandb_api_key_from_env_file(tmp_path):
     assert loaded == "abc123"
 
 
+def test_resolve_weave_project_uses_cli_values_over_env(monkeypatch):
+    monkeypatch.setenv("WANDB_ENTITY", "env-entity")
+    monkeypatch.setenv("WANDB_PROJECT", "env-project")
+
+    project_path = codex_weave.resolve_weave_project(
+        entity="cli-entity",
+        project="cli-project",
+    )
+
+    assert project_path == "cli-entity/cli-project"
+
+
+def test_resolve_weave_project_reads_env_defaults(monkeypatch):
+    monkeypatch.setenv("WANDB_ENTITY", "env-entity")
+    monkeypatch.setenv("WANDB_PROJECT", "env-project")
+
+    project_path = codex_weave.resolve_weave_project(entity=None, project=None)
+
+    assert project_path == "env-entity/env-project"
+
+
+def test_resolve_weave_project_requires_entity_and_project(monkeypatch):
+    monkeypatch.delenv("WANDB_ENTITY", raising=False)
+    monkeypatch.delenv("WANDB_PROJECT", raising=False)
+
+    try:
+        codex_weave.resolve_weave_project(entity=None, project=None)
+    except ValueError as exc:
+        assert "--entity" in str(exc)
+        assert "--project" in str(exc)
+    else:
+        raise AssertionError("Expected ValueError")
+
+
 def test_main_reads_wandb_api_key_from_dotenv_local(
     monkeypatch, capsys, tmp_path, fake_weave, fake_subprocess_run
 ):
     del fake_weave
     monkeypatch.delenv("WANDB_API_KEY", raising=False)
+    set_wandb_target_env(monkeypatch)
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".env.local").write_text("WANDB_API_KEY=x\n", encoding="utf-8")
     fake_subprocess_run(final_message="ok")
@@ -169,6 +206,7 @@ def test_main_prints_final_message_and_propagates_exit(
 ):
     del fake_weave
     monkeypatch.setenv("WANDB_API_KEY", "x")
+    set_wandb_target_env(monkeypatch)
     fake_subprocess_run(final_message="ok", returncode=0)
 
     rc = codex_weave.main(["--prompt", "Say only: ok"])
@@ -183,6 +221,7 @@ def test_main_guardrail_warn_does_not_fail_exit(
 ):
     del fake_weave
     monkeypatch.setenv("WANDB_API_KEY", "x")
+    set_wandb_target_env(monkeypatch)
     fake_subprocess_run(final_message="bad", returncode=0)
 
     rc = codex_weave.main(
@@ -206,6 +245,7 @@ def test_main_guardrail_fail_sets_nonzero_exit(
 ):
     del fake_weave
     monkeypatch.setenv("WANDB_API_KEY", "x")
+    set_wandb_target_env(monkeypatch)
     fake_subprocess_run(final_message="bad", returncode=0)
 
     rc = codex_weave.main(
@@ -229,6 +269,7 @@ def test_main_guardrail_require_json(
 ):
     del fake_weave
     monkeypatch.setenv("WANDB_API_KEY", "x")
+    set_wandb_target_env(monkeypatch)
     fake_subprocess_run(final_message="not json", returncode=0)
 
     rc = codex_weave.main(
@@ -251,6 +292,7 @@ def test_main_guardrail_require_section_and_paths(
 ):
     del fake_weave
     monkeypatch.setenv("WANDB_API_KEY", "x")
+    set_wandb_target_env(monkeypatch)
     fake_subprocess_run(final_message="no citation here", returncode=0)
 
     rc = codex_weave.main(
@@ -275,6 +317,7 @@ def test_main_times_out_with_clear_error(
 ):
     del fake_weave
     monkeypatch.setenv("WANDB_API_KEY", "x")
+    set_wandb_target_env(monkeypatch)
     fake_subprocess_run(raise_timeout=True)
 
     rc = codex_weave.main(["--prompt", "hello", "--timeout-seconds", "1"])

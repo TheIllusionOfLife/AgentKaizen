@@ -13,9 +13,6 @@ import weave
 
 from codex_scoring import evaluate_output
 
-DEFAULT_ENTITY = "mukaiyuya-mukai-entertainment"
-DEFAULT_PROJECT = "AgentKaizen"
-
 
 @dataclass
 class ParsedEvents:
@@ -91,8 +88,8 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--model", help="Codex model")
     parser.add_argument("--sandbox", help="Codex sandbox mode")
     parser.add_argument("--profile", help="Codex profile")
-    parser.add_argument("--entity", default=DEFAULT_ENTITY, help="W&B entity/team")
-    parser.add_argument("--project", default=DEFAULT_PROJECT, help="W&B project")
+    parser.add_argument("--entity", help="W&B entity/team")
+    parser.add_argument("--project", help="W&B project")
     parser.add_argument(
         "--codex-arg",
         action="append",
@@ -172,6 +169,16 @@ def ensure_wandb_api_key() -> str | None:
     return env_key
 
 
+def resolve_weave_project(entity: str | None, project: str | None) -> str:
+    resolved_entity = entity or os.environ.get("WANDB_ENTITY")
+    resolved_project = project or os.environ.get("WANDB_PROJECT")
+    if resolved_entity and resolved_project:
+        return f"{resolved_entity}/{resolved_project}"
+    raise ValueError(
+        "W&B entity and project are required. Pass --entity and --project, or set WANDB_ENTITY and WANDB_PROJECT."
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = _build_arg_parser()
     args = parser.parse_args(argv)
@@ -179,10 +186,14 @@ def main(argv: list[str] | None = None) -> int:
     if not ensure_wandb_api_key():
         print("WANDB_API_KEY is required to send traces to W&B.", file=sys.stderr)
         return 2
+    try:
+        project_path = resolve_weave_project(args.entity, args.project)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
 
     prompt = sys.stdin.read() if args.prompt == "-" else args.prompt
 
-    project_path = f"{args.entity}/{args.project}"
     weave.init(project_path)
 
     @weave.op()

@@ -22,10 +22,9 @@ from codex_scoring import (
     score_token_usage,
 )
 from codex_weave import (
-    DEFAULT_ENTITY,
-    DEFAULT_PROJECT,
     ensure_wandb_api_key,
     parse_codex_jsonl,
+    resolve_weave_project,
 )
 
 
@@ -234,8 +233,8 @@ def _build_parser() -> argparse.ArgumentParser:
         default=[],
         help="Path to variant JSON (repeatable)",
     )
-    parser.add_argument("--entity", default=DEFAULT_ENTITY, help="W&B entity/team")
-    parser.add_argument("--project", default=DEFAULT_PROJECT, help="W&B project")
+    parser.add_argument("--entity", help="W&B entity/team")
+    parser.add_argument("--project", help="W&B project")
     parser.add_argument("--model", help="Codex model")
     parser.add_argument("--sandbox", help="Codex sandbox mode")
     parser.add_argument("--profile", help="Codex profile")
@@ -516,8 +515,12 @@ def main(argv: list[str] | None = None) -> int:
     if not ensure_wandb_api_key():
         print("WANDB_API_KEY is required to run evals.", file=sys.stderr)
         return 2
+    try:
+        project_path = resolve_weave_project(args.entity, args.project)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
 
-    project_path = f"{args.entity}/{args.project}"
     weave.init(project_path)
 
     repo_root = Path.cwd()
