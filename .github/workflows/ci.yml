@@ -10,6 +10,8 @@ on:
 jobs:
   test-and-lint:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout
@@ -26,13 +28,13 @@ jobs:
           enable-cache: true
 
       - name: Sync dependencies
-        run: uv sync --group dev
+        run: uv sync --group dev --locked
 
       - name: Run tests
         run: uv run --group dev pytest
 
       - name: Lint
-        run: uv run --with ruff ruff check .
+        run: uv run --group dev ruff check .
 
       - name: Format check
-        run: uv run --with ruff ruff format --check .
+        run: uv run --group dev ruff format --check .
