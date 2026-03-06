@@ -3,7 +3,7 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
-import codex_scoring
+import agentkaizen.scoring as codex_scoring
 
 
 def test_evaluate_output_pass_case():

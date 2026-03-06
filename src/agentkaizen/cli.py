@@ -7,31 +7,31 @@ import sys
 
 # Module-level references to subcommand mains — patchable by tests.
 def _run_main(argv=None):
-    from codex_weave import main
+    from agentkaizen.oneshot import main
 
     return main(argv)
 
 
 def _eval_main(argv=None):
-    from codex_evals import main
+    from agentkaizen.evals import main
 
     return main(argv)
 
 
 def _casegen_main(argv=None):
-    from codex_casegen import main
+    from agentkaizen.casegen import main
 
     return main(argv)
 
 
 def _session_sync_main(argv=None):
-    from codex_interactive_sync import main
+    from agentkaizen.session_sync import main
 
     return main(argv)
 
 
 def _session_score_main(argv=None):
-    from codex_interactive_scoring import main
+    from agentkaizen.session_scoring import main
 
     return main(argv)
 
