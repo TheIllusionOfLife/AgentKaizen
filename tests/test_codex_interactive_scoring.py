@@ -179,6 +179,22 @@ def test_run_codex_judge_wraps_timeout(monkeypatch):
         raise AssertionError("Expected RuntimeError")
 
 
+def test_run_codex_judge_wraps_initial_prompt_runtimeerror(monkeypatch):
+    monkeypatch.setattr(
+        codex_interactive_scoring,
+        "_run_codex_prompt",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("codex missing")),
+    )
+
+    try:
+        codex_interactive_scoring.run_codex_judge({"analysis_summary": "x"})
+    except codex_interactive_scoring.JudgeResponseError as exc:
+        assert "codex missing" in str(exc)
+        assert exc.raw_output == ""
+    else:
+        raise AssertionError("Expected JudgeResponseError")
+
+
 def test_run_codex_judge_repairs_invalid_response_once(monkeypatch):
     outputs = iter(
         [
