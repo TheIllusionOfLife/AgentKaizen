@@ -1,0 +1,17 @@
+# Python cache/build artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Virtual env and local secrets
+.venv/
+.env
+.env.*
+.env.*.local
+.env.local
+
+# OS/editor noise
+.DS_Store

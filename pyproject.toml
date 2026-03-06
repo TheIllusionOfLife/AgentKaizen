@@ -1,0 +1,28 @@
+[project]
+name = "agentkaizen"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+  "weave>=0.52.30",
+]
+
+[project.scripts]
+codex-weave = "codex_weave:main"
+codex-eval = "codex_evals:main"
+codex-casegen = "codex_casegen:main"
+
+[build-system]
+requires = ["setuptools>=80"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = ["codex_weave", "codex_evals", "codex_scoring", "codex_casegen"]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.3.0",
+]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
