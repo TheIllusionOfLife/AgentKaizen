@@ -17,19 +17,16 @@ AgentKaizen currently evaluates four related things:
 Prompts in this project come from several places:
 - direct prompts passed to `codex-weave`
 - derived user tasks from interactive session traces
-- curated rows in `evals/cases.jsonl`
+- curated rows in `evals/cases/*.jsonl`
 - generated draft cases created from past traces
 
 ### Datasets
-The main offline eval dataset today is:
-- `evals/cases.jsonl`
-
-This file is useful, but it should be thought of as an early benchmark rather than a final mature benchmark. Over time, the project should evolve toward more intentional datasets organized by:
-- core behaviors
-- workflow compliance
-- document steering regressions
-- edge cases
-- multimodal cases
+The main offline eval dataset now lives under `evals/cases/` and is split into:
+- `core.jsonl`
+- `workflow.jsonl`
+- `docs-steering.jsonl`
+- `regressions.jsonl`
+- `multimodal.jsonl`
 
 ### Scorers
 The shared deterministic scorers live in `codex_scoring.py` and are used by `codex-eval`.
@@ -39,8 +36,10 @@ Current scorers:
 - forbidden substring absence
 - maximum output length
 - JSON parse validity
+- schema-aware JSON validation
 - required section presence
 - file path citation presence
+- semantic similarity against a reference answer
 - token usage extraction
 
 These scorers are useful for:
@@ -60,13 +59,13 @@ So the current scorer layer should be treated as production-usable guardrails, n
 ### Models
 Offline evals use `CodexVariantModel(weave.Model)` in `codex_evals.py`.
 
-This model represents a candidate application configuration, not a provider SDK model wrapper. In practice, a variant means:
+This model represents an execution wrapper around a prepared candidate application configuration, not a provider SDK model wrapper. In practice, variant preparation means:
 - a temporary copy of the repo
 - optional file edits
 - optional external files
 - a particular Codex model/profile/sandbox/args setup
 
-That is how this project uses Weave's model abstraction for evaluation-time app versioning.
+`CodexVariantModel` then executes that prepared workspace. The prepared config is the thing being compared over time.
 
 ## Two Tracking Modes
 ### 1. One-shot tracing
@@ -95,7 +94,7 @@ This is useful when the unit of interest is the whole session rather than a sing
 The offline eval command is `codex-eval`.
 
 The flow is:
-1. Load the evaluation cases from `evals/cases.jsonl`
+1. Load the evaluation cases from `evals/cases/` or another JSONL suite path
 2. Build a baseline plus one or more variants
 3. For each variant, create a temporary workspace
 4. Copy the repo into that workspace
@@ -139,7 +138,7 @@ It also derives structured labels such as:
 - `missing_lint`
 - `missing_format`
 
-These are fast, deterministic, and easy to interpret.
+The scorer now distinguishes suspicious signals from definite workflow failures so high exploration cost does not automatically imply a workflow violation.
 
 ### Optional external Codex judge
 When `--scoring-backend external` is used, the project runs another `codex exec` call as a structured judge.
@@ -174,10 +173,10 @@ The current case set is useful but still small and relatively simple. It should 
 The current scorers are mostly structural and syntactic. They do not fully capture semantic quality.
 
 ### Multimodal coverage
-This project is currently text-first. Image-bearing prompts are not preserved as first-class multimodal trace inputs in the current implementation.
+This project preserves multimodal content blocks for one-shot prompts and interactive session messages. Scoring remains mostly text-first, but multimodal traces are now available for future eval expansion.
 
 ### Redaction strategy
-The project currently uses custom pre-upload redaction for interactive sessions instead of relying only on Weave's built-in PII redaction setting. That is mainly because this repo needs project-specific sanitization for:
+The project uses hybrid redaction: custom pre-upload sanitization plus Weave's built-in PII redaction. The custom layer is still needed for:
 - tokens and auth headers
 - local filesystem paths
 - usernames in paths
@@ -191,8 +190,8 @@ To improve evaluation quality over time:
 - expand and categorize the eval datasets
 - add harder regression cases from real failures
 - introduce richer semantic scorers where needed
-- add multimodal support if Codex session traces expose image-bearing inputs
-- consider combining custom redaction with Weave's native PII redaction
+- expand multimodal eval cases beyond trace-fidelity checks
+- continue calibrating task-aware workflow heuristics
 
 ## Related Files
 - `codex_evals.py`
@@ -200,4 +199,4 @@ To improve evaluation quality over time:
 - `codex_casegen.py`
 - `codex_interactive_sync.py`
 - `codex_interactive_scoring.py`
-- `evals/cases.jsonl`
+- `evals/cases/`

@@ -3,7 +3,7 @@ name = "agentkaizen"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
-  "weave>=0.52.30",
+  "weave[scorers]>=0.52.30",
 ]
 
 [project.scripts]

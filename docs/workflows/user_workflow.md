@@ -41,7 +41,7 @@ uv run codex-score-interactive --trace-file path/to/interactive-trace.json
 5. Run offline comparison
 ```bash
 uv run codex-eval \
-  --cases evals/cases.jsonl \
+  --cases evals/cases \
   --variant-file evals/variants/<candidate>.json \
   --quality-similar-threshold 0.02 \
   --latency-regression-threshold 0.20 \

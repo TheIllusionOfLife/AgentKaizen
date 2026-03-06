@@ -80,8 +80,14 @@ def score_required_sections(
 ) -> dict[str, Any]:
     if not required_sections:
         return {"pass": True, "missing_sections": [], "required_count": 0}
-    text = _extract_text(output).lower()
-    missing = [section for section in required_sections if section.lower() not in text]
+    text = _extract_text(output)
+    missing: list[str] = []
+    for section in required_sections:
+        pattern = re.compile(
+            rf"(?im)^\s{{0,3}}(?:#+\s*)?{re.escape(section)}(?:\s*$|\s*[:\-])"
+        )
+        if not pattern.search(text):
+            missing.append(section)
     return {
         "pass": len(missing) == 0,
         "missing_sections": missing,
@@ -96,7 +102,8 @@ def score_file_path_citations(
         return {"pass": True, "path_count": 0, "require_file_paths": False}
     text = _extract_text(output)
     matches = re.findall(
-        r"(?:^|[\s\[(])([A-Za-z0-9_.\-]+/[A-Za-z0-9_./\-]+\.[A-Za-z0-9_]+)", text
+        r"(?:^|[\s\[(])([A-Za-z0-9_.\-]+/[A-Za-z0-9_./\-]+\.[A-Za-z0-9_]+(?:#L\d+(?:C\d+)?)?)",
+        text,
     )
     return {
         "pass": len(matches) > 0,

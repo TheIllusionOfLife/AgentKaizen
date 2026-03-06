@@ -30,11 +30,16 @@ from codex_weave import (
 
 def load_cases_jsonl(path: Path) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        stripped = line.strip()
-        if not stripped:
-            continue
-        rows.append(json.loads(stripped))
+    paths = sorted(path.glob("*.jsonl")) if path.is_dir() else [path]
+    for case_path in paths:
+        for line in case_path.read_text(encoding="utf-8").splitlines():
+            stripped = line.strip()
+            if not stripped:
+                continue
+            row = json.loads(stripped)
+            if isinstance(row, dict) and "suite" not in row:
+                row["suite"] = case_path.stem
+            rows.append(row)
     return rows
 
 
@@ -224,8 +229,8 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--cases",
-        default="evals/cases.jsonl",
-        help="Path to JSONL evaluation cases",
+        default="evals/cases",
+        help="Path to a JSONL evaluation file or directory of JSONL case suites",
     )
     parser.add_argument(
         "--variant-file",

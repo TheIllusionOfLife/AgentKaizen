@@ -89,6 +89,49 @@ def _flatten_message_content(value: Any) -> str:
     return str(value)
 
 
+def _normalize_content_blocks(value: Any) -> list[dict[str, Any]]:
+    if isinstance(value, str):
+        return [{"type": "input_text", "text": value}]
+    if not isinstance(value, list):
+        if value is None:
+            return []
+        return [{"type": "input_text", "text": str(value)}]
+
+    blocks: list[dict[str, Any]] = []
+    for item in value:
+        if isinstance(item, dict):
+            block_type = str(item.get("type") or "input_text")
+            normalized: dict[str, Any] = {"type": block_type}
+            if "text" in item and item.get("text") is not None:
+                normalized["text"] = str(item.get("text"))
+            if "image_url" in item and item.get("image_url") is not None:
+                normalized["image_url"] = str(item.get("image_url"))
+            if "image_path" in item and item.get("image_path") is not None:
+                normalized["image_path"] = str(item.get("image_path"))
+            blocks.append(normalized)
+        else:
+            blocks.append({"type": "input_text", "text": str(item)})
+    return blocks
+
+
+def _modalities_from_messages(messages: list[dict[str, Any]]) -> list[str]:
+    seen: set[str] = set()
+    modalities: list[str] = []
+    for message in messages:
+        blocks = message.get("content_blocks", [])
+        if not isinstance(blocks, list):
+            continue
+        for block in blocks:
+            if not isinstance(block, dict):
+                continue
+            block_type = str(block.get("type", ""))
+            modality = "image" if "image" in block_type else "text"
+            if modality not in seen:
+                seen.add(modality)
+                modalities.append(modality)
+    return modalities
+
+
 def _normalize_whitespace(text: str) -> str:
     return " ".join(text.split())
 
@@ -590,6 +633,9 @@ def build_interactive_trace(
         if record_type == "response_item":
             payload_type = payload.get("type")
             if payload_type == "message":
+                content_blocks = redactor(
+                    _normalize_content_blocks(payload.get("content"))
+                )
                 messages.append(
                     {
                         "timestamp": ts,
@@ -597,6 +643,7 @@ def build_interactive_trace(
                         "content": redactor(
                             _flatten_message_content(payload.get("content"))
                         ),
+                        "content_blocks": content_blocks,
                         "phase": _as_string(payload.get("phase")),
                         "source": "response_item",
                     }
@@ -644,6 +691,9 @@ def build_interactive_trace(
                             if payload_type == "user_message"
                             else "assistant",
                             "content": redactor(_as_string(maybe_text)),
+                            "content_blocks": redactor(
+                                [{"type": "input_text", "text": _as_string(maybe_text)}]
+                            ),
                             "phase": _as_string(payload.get("phase")),
                             "source": "event_msg",
                         }
@@ -662,6 +712,7 @@ def build_interactive_trace(
     )
     user_task, user_task_source = _derive_user_task(safe_thread_name, messages)
     resolved_thread_name = safe_thread_name or user_task
+    modalities = _modalities_from_messages(messages)
     updated_at = (
         _as_string((discovery_metadata or {}).get("updated_at")) or completed_at
     )
@@ -677,6 +728,7 @@ def build_interactive_trace(
         "completed_at": completed_at,
         "updated_at": updated_at,
         "status": status,
+        "modalities": modalities,
         "messages": messages,
         "tool_calls": tool_calls,
         "token_usage": token_usage,

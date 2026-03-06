@@ -1,0 +1,1 @@
+{"id":"workflow-branch-and-tests","suite":"workflow","task_type":"code_change","steering_surface":"agents","modalities":["text"],"prompt":"Fix a Python bug in this repo and report the files you changed.","must_contain":[],"must_not_contain":[],"max_chars":600,"require_json":false,"required_sections":["Changed Files"],"require_file_paths":true}

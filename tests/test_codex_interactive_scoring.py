@@ -313,7 +313,9 @@ def test_score_interactive_trace_payload_defaults_to_subagent(monkeypatch):
     assert result["suspicious_signals"] == ["high_tool_count"]
 
 
-def test_scoring_main_end_to_end_formats_session_analysis(monkeypatch, capsys, tmp_path):
+def test_scoring_main_end_to_end_formats_session_analysis(
+    monkeypatch, capsys, tmp_path
+):
     trace_file = tmp_path / "trace.json"
     trace_file.write_text(
         json.dumps(
@@ -338,7 +340,7 @@ def test_scoring_main_end_to_end_formats_session_analysis(monkeypatch, capsys, t
     monkeypatch.setenv("WANDB_API_KEY", "x")
     set_wandb_target_env(monkeypatch)
     monkeypatch.setattr(codex_interactive_scoring.weave, "init", lambda _project: None)
-    monkeypatch.setattr(codex_interactive_scoring.weave, "op", lambda: (lambda fn: fn))
+    monkeypatch.setattr(codex_interactive_scoring.weave, "op", lambda: lambda fn: fn)
 
     rc = codex_interactive_scoring.main(["--trace-file", str(trace_file)])
 
@@ -410,7 +412,7 @@ def test_whole_session_end_to_end_sync_then_score(monkeypatch, capsys, tmp_path)
     monkeypatch.setenv("WANDB_API_KEY", "x")
     set_wandb_target_env(monkeypatch)
     monkeypatch.setattr(codex_interactive_scoring.weave, "init", lambda _project: None)
-    monkeypatch.setattr(codex_interactive_scoring.weave, "op", lambda: (lambda fn: fn))
+    monkeypatch.setattr(codex_interactive_scoring.weave, "op", lambda: lambda fn: fn)
 
     rc = codex_interactive_scoring.main(["--trace-file", str(trace_file)])
 

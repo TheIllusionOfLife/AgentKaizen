@@ -75,7 +75,9 @@ def test_structure_scorers_fail_cases():
 def test_required_sections_match_headings_not_substrings():
     output = {"text": "Summary details without a heading", "usage": {}}
 
-    result = codex_scoring.score_required_sections(output, required_sections=["Summary"])
+    result = codex_scoring.score_required_sections(
+        output, required_sections=["Summary"]
+    )
 
     assert result["pass"] is False
 

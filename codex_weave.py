@@ -65,6 +65,7 @@ def build_codex_command(
     model: str | None = None,
     sandbox: str | None = None,
     profile: str | None = None,
+    image_paths: list[str] | None = None,
     codex_args: list[str] | None = None,
 ) -> list[str]:
     command = ["codex", "exec", "--json"]
@@ -74,10 +75,34 @@ def build_codex_command(
         command.extend(["--sandbox", sandbox])
     if profile:
         command.extend(["--profile", profile])
+    if image_paths:
+        for image_path in image_paths:
+            command.extend(["--image", image_path])
     if codex_args:
         command.extend(codex_args)
     command.append(prompt)
     return command
+
+
+def build_prompt_content(
+    prompt: str, image_paths: list[str] | None = None
+) -> list[dict[str, str]]:
+    content: list[dict[str, str]] = [{"type": "input_text", "text": prompt}]
+    for image_path in image_paths or []:
+        content.append({"type": "input_image", "image_path": image_path})
+    return content
+
+
+def summarize_modalities(content: list[dict[str, object]]) -> list[str]:
+    modalities: list[str] = []
+    seen: set[str] = set()
+    for block in content:
+        block_type = str(block.get("type", ""))
+        modality = "image" if "image" in block_type else "text"
+        if modality not in seen:
+            seen.add(modality)
+            modalities.append(modality)
+    return modalities
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:
@@ -88,6 +113,12 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--model", help="Codex model")
     parser.add_argument("--sandbox", help="Codex sandbox mode")
     parser.add_argument("--profile", help="Codex profile")
+    parser.add_argument(
+        "--image",
+        action="append",
+        default=[],
+        help="Image file to attach to the initial prompt (repeatable)",
+    )
     parser.add_argument("--entity", help="W&B entity/team")
     parser.add_argument("--project", help="W&B project")
     parser.add_argument(
@@ -193,6 +224,8 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     prompt = sys.stdin.read() if args.prompt == "-" else args.prompt
+    input_content = build_prompt_content(prompt, image_paths=args.image)
+    modalities = summarize_modalities(input_content)
 
     weave.init(project_path)
 
@@ -203,6 +236,7 @@ def main(argv: list[str] | None = None) -> int:
             model=args.model,
             sandbox=args.sandbox,
             profile=args.profile,
+            image_paths=args.image,
             codex_args=args.codex_arg,
         )
         try:
@@ -216,6 +250,8 @@ def main(argv: list[str] | None = None) -> int:
             return {
                 "command": command,
                 "prompt": prompt,
+                "input_content": input_content,
+                "modalities": modalities,
                 "returncode": 124,
                 "stderr": f"codex exec timed out after {args.timeout_seconds} seconds",
                 "events": [],
@@ -245,6 +281,8 @@ def main(argv: list[str] | None = None) -> int:
         return {
             "command": command,
             "prompt": prompt,
+            "input_content": input_content,
+            "modalities": modalities,
             "returncode": proc.returncode,
             "stderr": proc.stderr,
             "events": parsed.events,
