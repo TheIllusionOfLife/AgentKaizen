@@ -4,6 +4,7 @@ import argparse
 import json
 import logging
 import re
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -162,7 +163,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if not ensure_wandb_api_key():
-        print("WANDB_API_KEY is required to generate cases.")
+        print("WANDB_API_KEY is required to generate cases.", file=sys.stderr)
         return 2
 
     weave.init(f"{args.entity}/{args.project}")

@@ -78,3 +78,12 @@ def test_fetch_recent_codex_cases_dedupes_on_the_fly(monkeypatch):
     )
 
     assert [case["prompt"] for case in result] == ["dup", "unique"]
+
+
+def test_main_missing_wandb_api_key_writes_to_stderr(monkeypatch, capsys):
+    monkeypatch.setattr(codex_casegen, "ensure_wandb_api_key", lambda: None)
+    rc = codex_casegen.main([])
+    out = capsys.readouterr()
+    assert rc == 2
+    assert "WANDB_API_KEY" in out.err
+    assert out.out == ""
