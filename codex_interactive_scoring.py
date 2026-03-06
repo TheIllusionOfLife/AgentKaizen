@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import subprocess
 import sys
 from typing import Any
@@ -63,11 +64,16 @@ def parse_judge_response(text: str) -> dict[str, Any]:
             continue
         value = payload.get(field)
         if isinstance(value, bool):
-            normalized[field] = 1.0 if value else 0.0
+            numeric_value = 1.0 if value else 0.0
         elif isinstance(value, (int, float)):
-            normalized[field] = float(value)
+            numeric_value = float(value)
         else:
             raise ValueError(f"Judge output field '{field}' must be numeric.")
+        if not math.isfinite(numeric_value) or not 0.0 <= numeric_value <= 1.0:
+            raise ValueError(
+                f"Judge output field '{field}' must be a finite number between 0 and 1; got {value!r}."
+            )
+        normalized[field] = numeric_value
     relevance = str(payload.get("optimization_relevance", "none"))
     if relevance not in ALLOWED_RELEVANCE:
         raise ValueError("Judge output contains an invalid optimization_relevance.")

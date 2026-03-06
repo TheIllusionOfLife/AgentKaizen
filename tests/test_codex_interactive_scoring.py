@@ -55,6 +55,40 @@ def test_parse_judge_response_rejects_invalid_output():
         raise AssertionError("Expected ValueError")
 
 
+def test_parse_judge_response_rejects_non_finite_numeric_score():
+    try:
+        codex_interactive_scoring.parse_judge_response(
+            json.dumps(
+                {
+                    "task_success": float("nan"),
+                    "optimization_relevance": "agents",
+                }
+            )
+        )
+    except ValueError as exc:
+        assert "task_success" in str(exc)
+        assert "nan" in str(exc).lower()
+    else:
+        raise AssertionError("Expected ValueError")
+
+
+def test_parse_judge_response_rejects_out_of_range_numeric_score():
+    try:
+        codex_interactive_scoring.parse_judge_response(
+            json.dumps(
+                {
+                    "task_success": 1.5,
+                    "optimization_relevance": "agents",
+                }
+            )
+        )
+    except ValueError as exc:
+        assert "task_success" in str(exc)
+        assert "1.5" in str(exc)
+    else:
+        raise AssertionError("Expected ValueError")
+
+
 def test_merge_interactive_scores_combines_heuristics_and_judge():
     result = codex_interactive_scoring.merge_interactive_scores(
         heuristic_scores={
