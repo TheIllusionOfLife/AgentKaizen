@@ -4,7 +4,7 @@ import argparse
 import asyncio
 import json
 import shutil
-import subprocess
+import subprocess  # noqa: F401  (re-exported for test patchability)
 import sys
 import tempfile
 from pathlib import Path
@@ -14,9 +14,10 @@ import weave
 from pydantic import BaseModel, ConfigDict, create_model
 from weave.scorers import PydanticScorer, ValidJSONScorer
 
+from agentkaizen.runners import get_runner
+from agentkaizen.runners.base import AgentRunError
 from agentkaizen.core import (
     ensure_wandb_api_key,
-    parse_codex_jsonl,
     resolve_weave_project,
 )
 from agentkaizen.scoring import (
@@ -381,33 +382,27 @@ class CodexVariantModel(weave.Model):
 
     @weave.op()
     def predict(self, prompt: str) -> dict[str, Any]:
-        command = ["codex", "exec", "-C", self.workspace, "--json"]
-        if self.codex_model:
-            command.extend(["--model", self.codex_model])
-        if self.sandbox:
-            command.extend(["--sandbox", self.sandbox])
-        if self.profile:
-            command.extend(["--profile", self.profile])
-        command.extend(normalize_codex_args(self.codex_args))
-        command.append(prompt)
-
+        runner = get_runner(
+            "codex",
+            model=self.codex_model,
+            sandbox=self.sandbox,
+            profile=self.profile,
+            extra_args=normalize_codex_args(self.codex_args),
+            skip_git_repo_check=False,  # already in normalize_codex_args
+        )
         try:
-            proc = subprocess.run(
-                command,
-                capture_output=True,
-                text=True,
-                timeout=self.timeout_seconds,
+            result = runner.run(
+                prompt,
+                workspace=Path(self.workspace),
+                timeout_seconds=self.timeout_seconds,
             )
-        except subprocess.TimeoutExpired as exc:
+        except AgentRunError as exc:
+            raise RuntimeError(str(exc)) from exc
+        if result.returncode != 0:
             raise RuntimeError(
-                f"codex exec timed out after {self.timeout_seconds} seconds"
-            ) from exc
-        if proc.returncode != 0:
-            raise RuntimeError(
-                f"codex exec failed (exit={proc.returncode}): {proc.stderr.strip()}"
+                f"codex exec failed (exit={result.returncode}): {result.stderr.strip()}"
             )
-        parsed = parse_codex_jsonl(proc.stdout.splitlines())
-        return {"text": parsed.final_message, "usage": parsed.usage}
+        return {"text": result.final_message, "usage": vars(result.usage)}
 
 
 def _build_parser() -> argparse.ArgumentParser:

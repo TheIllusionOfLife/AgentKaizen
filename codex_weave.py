@@ -3,11 +3,13 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import subprocess
+import subprocess  # noqa: F401  (re-exported for test patchability)
 import sys
 
 import weave
 
+from agentkaizen.runners import get_runner
+from agentkaizen.runners.base import AgentRunError
 from agentkaizen.core import (
     DEFAULT_PII_REDACTION_FIELDS,  # noqa: F401  (re-exported for test access)
     SUPPORTED_WANDB_ENV_KEYS,  # noqa: F401  (re-exported for test access)
@@ -21,7 +23,7 @@ from agentkaizen.core import (
     infer_wandb_entity,
     load_wandb_api_key_from_env_file,  # noqa: F401  (re-exported for test access)
     load_wandb_env_from_env_file,  # noqa: F401  (re-exported for test access)
-    parse_codex_jsonl,
+    parse_codex_jsonl,  # noqa: F401  (re-exported for test access)
     sanitize_command,
     summarize_modalities,
 )
@@ -156,31 +158,28 @@ def main(argv: list[str] | None = None) -> int:
     configure_weave_pii_redaction()
     weave.init(project_path)
 
+    runner = get_runner(
+        "codex",
+        model=args.model,
+        sandbox=args.sandbox,
+        profile=args.profile,
+        image_paths=args.image,
+        extra_args=args.codex_arg,
+    )
+
     @weave.op(name="run_codex_exec_traced")  # freeze op name across refactor
     def run_codex_exec_traced() -> dict:
-        command = build_codex_command(
-            prompt=prompt,
-            model=args.model,
-            sandbox=args.sandbox,
-            profile=args.profile,
-            image_paths=args.image,
-            codex_args=args.codex_arg,
-        )
+        command = runner.build_command(prompt)
         try:
-            proc = subprocess.run(
-                command,
-                capture_output=True,
-                text=True,
-                timeout=args.timeout_seconds,
-            )
-        except subprocess.TimeoutExpired:
+            result = runner.run(prompt, timeout_seconds=args.timeout_seconds)
+        except AgentRunError as exc:
             return {
                 "command": sanitize_command(command),
                 "prompt": prompt,
                 "input_content": input_content,
                 "modalities": modalities,
                 "returncode": 124,
-                "stderr": f"codex exec timed out after {args.timeout_seconds} seconds",
+                "stderr": str(exc),
                 "events": [],
                 "malformed_lines": 0,
                 "usage": {},
@@ -196,9 +195,8 @@ def main(argv: list[str] | None = None) -> int:
                     require_file_paths=args.require_file_paths,
                 ),
             }
-        parsed = parse_codex_jsonl(proc.stdout.splitlines())
         guardrails = evaluate_output(
-            output={"text": parsed.final_message, "usage": parsed.usage},
+            output={"text": result.final_message, "usage": vars(result.usage)},
             must_contain=args.must_contain,
             must_not_contain=args.must_not_contain,
             exact_match=None,
@@ -212,12 +210,12 @@ def main(argv: list[str] | None = None) -> int:
             "prompt": prompt,
             "input_content": input_content,
             "modalities": modalities,
-            "returncode": proc.returncode,
-            "stderr": proc.stderr,
-            "events": parsed.events,
-            "malformed_lines": parsed.malformed_lines,
-            "usage": parsed.usage,
-            "final_message": parsed.final_message,
+            "returncode": result.returncode,
+            "stderr": result.stderr,
+            "events": result.raw_events,
+            "malformed_lines": result.malformed_lines,
+            "usage": vars(result.usage),
+            "final_message": result.final_message,
             "guardrails": guardrails,
         }
 

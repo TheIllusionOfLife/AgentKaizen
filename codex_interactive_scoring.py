@@ -3,12 +3,14 @@ from __future__ import annotations
 import argparse
 import json
 import math
-import subprocess
+import subprocess  # noqa: F401  (re-exported for test patchability)
 import sys
 from typing import Any
 
 import weave
 
+from agentkaizen.runners import get_runner
+from agentkaizen.runners.base import AgentRunError
 from agentkaizen.core import ensure_wandb_api_key, resolve_weave_project
 
 ALLOWED_RELEVANCE = {"agents", "readme", "skill", "config", "none"}
@@ -512,29 +514,18 @@ def _run_codex_prompt(
     model: str | None,
     timeout_seconds: int,
 ) -> str:
-    command = [codex_bin, "exec", "--json"]
-    if model:
-        command.extend(["--model", model])
-    command.append(prompt)
+    runner = get_runner("codex", model=model)
     try:
-        proc = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            timeout=timeout_seconds,
-        )
-    except subprocess.TimeoutExpired as exc:
+        result = runner.run(prompt, timeout_seconds=timeout_seconds)
+    except AgentRunError as exc:
+        raise RuntimeError(str(exc)) from exc
+    if result.returncode != 0:
         raise RuntimeError(
-            f"codex judge timed out after {timeout_seconds} seconds"
-        ) from exc
-    if proc.returncode != 0:
-        raise RuntimeError(
-            f"codex judge failed (exit={proc.returncode}): {proc.stderr}"
+            f"codex judge failed (exit={result.returncode}): {result.stderr}"
         )
-    final_text = _extract_agent_message_text(proc.stdout)
-    if not final_text:
+    if not result.final_message:
         raise RuntimeError("Could not find judge response in codex output.")
-    return final_text
+    return result.final_message
 
 
 def run_codex_judge(
