@@ -374,6 +374,20 @@ def test_format_score_summary_emphasizes_actionable_feedback():
     assert "Recommendations: Clarify README.md demo workflow." in summary
 
 
+def test_format_score_summary_handles_non_numeric_task_success():
+    summary = codex_interactive_scoring.format_score_summary(
+        {
+            "derived_user_task": "demo task",
+            "task_success": "completed",
+            "friction_signals": [],
+            "workflow_failures": [],
+            "recommended_changes": [],
+        }
+    )
+
+    assert "Outcome: incomplete" in summary
+
+
 def test_main_can_emit_json_with_flag(monkeypatch, tmp_path, capsys):
     trace_file = tmp_path / "trace.json"
     trace_file.write_text(

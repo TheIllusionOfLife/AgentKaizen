@@ -59,9 +59,11 @@ def score_interactive_heuristics(trace: dict[str, Any]) -> dict[str, Any]:
 
 def format_score_summary(result: dict[str, Any]) -> str:
     task = str(result.get("derived_user_task", "")).strip() or "Unknown task"
-    outcome = (
-        "completed" if float(result.get("task_success", 0.0)) >= 0.5 else "incomplete"
-    )
+    try:
+        task_success = float(result.get("task_success", 0.0))
+    except (TypeError, ValueError):
+        task_success = 0.0
+    outcome = "completed" if task_success >= 0.5 else "incomplete"
     friction_signals = list(result.get("friction_signals", []))
     workflow_failures = list(result.get("workflow_failures", []))
     recommendations = list(result.get("recommended_changes", []))
