@@ -48,10 +48,15 @@ def score_exact_match(
     output: str | dict[str, Any], exact_match: str | None = None
 ) -> dict[str, Any]:
     if exact_match is None:
-        return {"pass": True, "exact_match": None}
+        return {
+            "pass": True,
+            "exact_match_required": False,
+            "expected": None,
+        }
     text = _extract_text(output).strip()
     return {
         "pass": text == exact_match,
+        "exact_match_required": True,
         "expected": exact_match,
         "actual": text,
     }

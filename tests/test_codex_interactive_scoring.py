@@ -347,6 +347,7 @@ def test_scoring_main_end_to_end_formats_session_analysis(
     out = capsys.readouterr()
     assert rc == 0
     assert "Task: Update README wording for setup instructions" in out.out
+    assert "Suspicious signals: high_tool_count" in out.out
     assert "Workflow gaps: none" in out.out
 
 

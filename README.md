@@ -200,7 +200,7 @@ This repo uses hybrid redaction for traced content: custom sanitization for repo
 - session-specific metadata cleanup
 - suppression of large instruction boilerplate when deriving the user task
 
-Built-in Weave redaction would still be a reasonable future improvement, but it would complement rather than replace the project-specific sanitization already implemented here.
+Weave's built-in redaction is enabled for one-shot and interactive trace uploads, but it complements rather than replaces the project-specific sanitization above.
 
 ## Architecture
 The core flow is:

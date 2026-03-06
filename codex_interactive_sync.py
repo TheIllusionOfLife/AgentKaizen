@@ -13,7 +13,13 @@ from typing import Any, Callable
 
 import weave
 
-from codex_weave import ensure_wandb_api_key, resolve_weave_project
+from codex_weave import (
+    _sanitize_path,
+    apply_builtin_pii_redaction,
+    configure_weave_pii_redaction,
+    ensure_wandb_api_key,
+    resolve_weave_project,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -378,17 +384,6 @@ def _as_string(value: Any) -> str:
     return json.dumps(value, ensure_ascii=True)
 
 
-def _sanitize_path(path_value: str) -> str:
-    if not path_value:
-        return path_value
-    home_dir = str(pathlib.Path.home())
-    if path_value.startswith(home_dir):
-        path_value = path_value.replace(home_dir, "~", 1)
-    path_value = re.sub(r"^/Users/[^/]+/", "/Users/[REDACTED]/", path_value)
-    path_value = re.sub(r"^/home/[^/]+/", "/home/[REDACTED]/", path_value)
-    return path_value
-
-
 def _load_tool_command(tool_call: dict[str, Any]) -> str:
     if tool_call.get("name") != "exec_command":
         return ""
@@ -717,7 +712,7 @@ def build_interactive_trace(
         _as_string((discovery_metadata or {}).get("updated_at")) or completed_at
     )
 
-    return {
+    trace_payload = {
         "source": "codex_interactive",
         "session_id": _as_string(session_meta.get("id") or session_file.stem),
         "thread_name": resolved_thread_name,
@@ -748,6 +743,7 @@ def build_interactive_trace(
             **(discovery_metadata or {}),
         },
     }
+    return apply_builtin_pii_redaction(trace_payload, enabled=redaction_enabled)
 
 
 def _update_state(
@@ -936,6 +932,7 @@ def main(argv: list[str] | None = None) -> int:
         print(str(exc), file=sys.stderr)
         return 2
 
+    configure_weave_pii_redaction(enabled=not args.no_redaction)
     weave.init(project_path)
 
     session_root = pathlib.Path(args.session_root).expanduser().resolve()

@@ -2,7 +2,6 @@ import json
 import pathlib
 import sys
 from pathlib import Path
-from types import SimpleNamespace
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
@@ -90,9 +89,7 @@ def test_builtin_pydantic_case_scorer_validates_response_schema():
 def test_builtin_embedding_similarity_case_scorer_skips_without_reference():
     scorer = codex_evals.BuiltinEmbeddingSimilarityCaseScorer()
 
-    skipped = codex_evals.asyncio.run(
-        scorer.score(output="ok", reference_output=None)
-    )
+    skipped = codex_evals.asyncio.run(scorer.score(output="ok", reference_output=None))
 
     assert skipped["applicable"] is False
 
@@ -555,6 +552,43 @@ def test_quality_score_uses_baseline_active_checks_only():
     )
     candidate = next(item for item in ranked if item["variant"] == "candidate")
     assert candidate["quality_score"] == 1.0
+
+
+def test_quality_score_includes_exact_match_when_baseline_requires_it():
+    ranked = codex_evals.rank_variant_results(
+        [
+            {
+                "variant": "baseline",
+                "summary": {
+                    "score_contains_all": {"pass": {"true_fraction": 1.0}},
+                    "score_forbidden_absent": {"pass": {"true_fraction": 1.0}},
+                    "score_max_chars": {"pass": {"true_fraction": 1.0}},
+                    "score_exact_match": {
+                        "pass": {"true_fraction": 1.0},
+                        "exact_match_required": {"true_fraction": 1.0, "count": 1},
+                    },
+                },
+            },
+            {
+                "variant": "candidate",
+                "summary": {
+                    "score_contains_all": {"pass": {"true_fraction": 1.0}},
+                    "score_forbidden_absent": {"pass": {"true_fraction": 1.0}},
+                    "score_max_chars": {"pass": {"true_fraction": 1.0}},
+                    "score_exact_match": {
+                        "pass": {"true_fraction": 0.0},
+                        "exact_match_required": {"true_fraction": 1.0, "count": 1},
+                    },
+                },
+            },
+        ],
+        quality_similar_threshold=0.02,
+        latency_regression_threshold=0.2,
+        token_regression_threshold=0.2,
+    )
+
+    candidate = next(item for item in ranked if item["variant"] == "candidate")
+    assert candidate["quality_score"] < 1.0
 
 
 def test_main_returns_4_when_candidate_fails_gate(monkeypatch):

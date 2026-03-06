@@ -436,9 +436,7 @@ def test_build_interactive_trace_applies_builtin_pii_redaction(monkeypatch, tmp_
         "apply_builtin_pii_redaction",
         lambda value, enabled=True: {
             **value,
-            "messages": [
-                {**value["messages"][0], "content": "[REDACTED]"}
-            ],
+            "messages": [{**value["messages"][0], "content": "[REDACTED]"}],
         },
     )
 

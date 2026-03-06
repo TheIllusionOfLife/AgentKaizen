@@ -34,7 +34,7 @@ Common commands:
 - `uv run codex-weave-sync-interactive --once`
 - `uv run codex-score-interactive --trace-file path/to/interactive-trace.json`
 - `uv run codex-casegen --limit 20 --output evals/cases.generated.jsonl`
-- `uv run codex-eval --cases evals/cases.jsonl --variant-file evals/variants/<file>.json`
+- `uv run codex-eval --cases evals/cases --variant-file evals/variants/<file>.json`
 - `uv run --group dev pytest`
 - `uv run --with ruff ruff check .`
 - `uv run --with ruff ruff format --check .`

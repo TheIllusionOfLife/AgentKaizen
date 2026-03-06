@@ -4,12 +4,15 @@ import argparse
 import json
 import os
 import pathlib
+import re
 import subprocess
 import sys
 from dataclasses import dataclass
-from typing import Iterable
+from typing import Any, Iterable
 
 import weave
+from weave.trace.settings import UserSettings
+from weave.utils.pii_redaction import redact_pii
 
 from codex_scoring import evaluate_output
 
@@ -20,6 +23,22 @@ class ParsedEvents:
     final_message: str
     usage: dict
     malformed_lines: int
+
+
+DEFAULT_PII_REDACTION_FIELDS = [
+    "prompt",
+    "final_message",
+    "stderr",
+    "content",
+    "content_blocks",
+    "messages",
+    "tool_calls",
+    "arguments",
+    "output",
+    "analysis_summary",
+    "user_task",
+    "thread_name",
+]
 
 
 def parse_codex_jsonl(lines: Iterable[str]) -> ParsedEvents:
@@ -60,6 +79,40 @@ def parse_codex_jsonl(lines: Iterable[str]) -> ParsedEvents:
     )
 
 
+def _sanitize_path(path_value: str) -> str:
+    if not path_value:
+        return path_value
+    home_dir = str(pathlib.Path.home())
+    if path_value.startswith(home_dir):
+        path_value = path_value.replace(home_dir, "~", 1)
+    path_value = re.sub(r"^/Users/[^/]+/", "/Users/[REDACTED]/", path_value)
+    path_value = re.sub(r"^/home/[^/]+/", "/home/[REDACTED]/", path_value)
+    return path_value
+
+
+def sanitize_command(command: list[str]) -> list[str]:
+    return [_sanitize_path(part) for part in command]
+
+
+def configure_weave_pii_redaction(enabled: bool = True) -> None:
+    settings = UserSettings(
+        redact_pii=enabled,
+        redact_pii_fields=DEFAULT_PII_REDACTION_FIELDS if enabled else [],
+    )
+    settings.apply()
+
+
+def apply_builtin_pii_redaction(
+    value: dict[str, Any] | str, enabled: bool = True
+) -> dict[str, Any] | str:
+    if not enabled:
+        return value
+    try:
+        return redact_pii(value)
+    except Exception:
+        return value
+
+
 def build_codex_command(
     prompt: str,
     model: str | None = None,
@@ -89,7 +142,9 @@ def build_prompt_content(
 ) -> list[dict[str, str]]:
     content: list[dict[str, str]] = [{"type": "input_text", "text": prompt}]
     for image_path in image_paths or []:
-        content.append({"type": "input_image", "image_path": image_path})
+        content.append(
+            {"type": "input_image", "image_path": _sanitize_path(image_path)}
+        )
     return content
 
 
@@ -227,6 +282,7 @@ def main(argv: list[str] | None = None) -> int:
     input_content = build_prompt_content(prompt, image_paths=args.image)
     modalities = summarize_modalities(input_content)
 
+    configure_weave_pii_redaction()
     weave.init(project_path)
 
     @weave.op()
@@ -248,7 +304,7 @@ def main(argv: list[str] | None = None) -> int:
             )
         except subprocess.TimeoutExpired:
             return {
-                "command": command,
+                "command": sanitize_command(command),
                 "prompt": prompt,
                 "input_content": input_content,
                 "modalities": modalities,
@@ -281,7 +337,7 @@ def main(argv: list[str] | None = None) -> int:
             require_file_paths=args.require_file_paths,
         )
         return {
-            "command": command,
+            "command": sanitize_command(command),
             "prompt": prompt,
             "input_content": input_content,
             "modalities": modalities,
@@ -294,7 +350,7 @@ def main(argv: list[str] | None = None) -> int:
             "guardrails": guardrails,
         }
 
-    result = run_codex_exec_traced()
+    result = apply_builtin_pii_redaction(run_codex_exec_traced())
     if result["final_message"]:
         print(result["final_message"])
     if result["stderr"]:

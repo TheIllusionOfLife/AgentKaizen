@@ -183,7 +183,7 @@ The project uses hybrid redaction: custom pre-upload sanitization plus Weave's b
 - session-specific metadata
 - instruction boilerplate suppression
 
-Built-in Weave PII redaction would still be a reasonable future improvement, but it would likely complement rather than replace the current logic.
+Built-in Weave PII redaction is active in the current runtime, and it complements rather than replaces the current logic.
 
 ## Recommended Next Steps
 To improve evaluation quality over time:

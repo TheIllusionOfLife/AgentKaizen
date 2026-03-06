@@ -56,7 +56,7 @@ The project performs hybrid redaction for traced payloads: custom pre-upload san
 - usernames embedded in paths
 - session-specific instruction boilerplate
 
-Weave's built-in PII redaction could still be added later, but it would be additive rather than a complete replacement.
+Weave's built-in PII redaction is enabled in the current runtime, and it remains additive rather than a complete replacement.
 
 ### Operational environment variables
 This project currently relies on environment variables for operational Weave behavior instead of hardcoded runtime settings. That is usually the right fit for:

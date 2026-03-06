@@ -123,6 +123,12 @@ def format_score_summary(result: dict[str, Any]) -> str:
         f"Outcome: {outcome}",
         "Friction signals: "
         + (", ".join(friction_signals) if friction_signals else "none"),
+        "Suspicious signals: "
+        + (
+            ", ".join(result.get("suspicious_signals", []))
+            if result.get("suspicious_signals")
+            else "none"
+        ),
         "Workflow gaps: "
         + (", ".join(workflow_failures) if workflow_failures else "none"),
         "Recommendations: "
