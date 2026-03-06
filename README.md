@@ -170,6 +170,12 @@ This project uses Weave tracing in two distinct modes:
 
 The one-shot mode stores structured prompt content, command, event stream, final message, usage, and guardrail results. The interactive mode reconstructs an entire session from local Codex session files and stores structured message content, tool calls, usage, derived task text, and workflow analysis.
 
+The important difference is what each mode answers:
+- one-shot and offline eval flows answer: "did variant B beat baseline A on this prompt set?"
+- interactive scoring answers: "what happened in this real session, how well did it go, and which optimization surface should we adjust next?"
+
+In other words, one-shot/offline eval is for controlled comparison across variants, while interactive ingestion and scoring is for diagnosing a single real session and turning it into the next hypothesis to test.
+
 #### 2. Prompts, datasets, scorers, and models
 Prompts in this repo come from:
 - direct `codex-weave` prompts
