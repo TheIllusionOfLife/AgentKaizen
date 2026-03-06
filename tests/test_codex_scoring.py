@@ -156,6 +156,17 @@ def test_file_path_citations_can_require_multiple_paths():
     assert failed["path_count"] == 2
 
 
+def test_file_path_citations_accept_root_level_filenames():
+    output = {"text": "See README.md and pyproject.toml for details", "usage": {}}
+
+    result = codex_scoring.score_file_path_citations(
+        output, require_file_paths=True, min_file_paths=2
+    )
+
+    assert result["pass"] is True
+    assert result["path_count"] == 2
+
+
 def test_evaluate_output_includes_new_local_scorers():
     result = codex_scoring.evaluate_output(
         output="Uses W&B Weave in docs. See src/app.py#L10",
@@ -169,3 +180,4 @@ def test_evaluate_output_includes_new_local_scorers():
     assert result["pass"] is True
     assert result["score_min_chars"]["pass"] is True
     assert result["score_required_content_groups"]["pass"] is True
+    assert result["score_file_path_citations"]["pass"] is True

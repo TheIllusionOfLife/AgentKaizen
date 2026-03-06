@@ -164,7 +164,7 @@ def score_file_path_citations(
         }
     text = _extract_text(output)
     matches = re.findall(
-        r"(?:^|[\s\[(])([A-Za-z0-9_.\-]+/[A-Za-z0-9_./\-]+\.[A-Za-z0-9_]+(?:#L\d+(?:C\d+)?)?)",
+        r"(?:^|[\s\[(])([A-Za-z0-9_.\-]+(?:/[A-Za-z0-9_./\-]+)?\.[A-Za-z0-9_]+(?:#L\d+(?:C\d+)?)?)",
         text,
     )
     return {

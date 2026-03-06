@@ -816,8 +816,9 @@ def test_main_succeeds_without_optional_builtin_scorer_columns(
     out = capsys.readouterr()
     assert rc == 0
     assert scorer_names
-    assert "builtin_json_validity" not in scorer_names[0]
-    assert "builtin_pydantic" not in scorer_names[0]
+    for names in scorer_names:
+        assert "builtin_json_validity" not in names
+        assert "builtin_pydantic" not in names
     assert "Ranking Summary:" in out.out
 
 

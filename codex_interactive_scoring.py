@@ -112,9 +112,13 @@ def score_interactive_heuristics(trace: dict[str, Any]) -> dict[str, Any]:
     clarification_friction = min(1.0, 0.25 * clarification_count)
     correction_friction = min(1.0, 0.5 * user_correction_count)
     execution_friction = min(1.0, 0.25 * error_count)
-    friction = min(
-        1.0, clarification_friction + correction_friction + execution_friction
-    )
+    raw_friction = clarification_friction + correction_friction + execution_friction
+    friction = min(1.0, raw_friction)
+    if raw_friction > friction and raw_friction > 0.0:
+        scale = friction / raw_friction
+        clarification_friction *= scale
+        correction_friction *= scale
+        execution_friction *= scale
     friction_breakdown = {
         "clarification": round(clarification_friction, 3),
         "correction": round(correction_friction, 3),
@@ -206,7 +210,8 @@ def format_score_summary(result: dict[str, Any]) -> str:
         lines.append(
             "Breakdowns: "
             f"friction={result.get('friction_breakdown', {})}; "
-            f"workflow={result.get('workflow_signal_breakdown', {})}"
+            f"workflow={result.get('workflow_signal_breakdown', {})}; "
+            f"efficiency={result.get('efficiency_breakdown', {})}"
         )
     return "\n".join(lines)
 
@@ -593,6 +598,7 @@ def score_interactive_trace_payload(
         )
     if scoring_backend != "external":
         raise ValueError(f"Unsupported scoring backend: {scoring_backend}")
+    structured_local = run_subagent_analysis(trace_payload)
     try:
         judge_scores = run_codex_judge(
             trace_payload,
@@ -602,46 +608,65 @@ def score_interactive_trace_payload(
         judge_scores["scorer_backend"] = "external"
         judge_scores["derived_user_task"] = derived_user_task
         judge_scores["task_context"] = str(heuristics.get("task_context", "unknown"))
-        judge_scores.setdefault("friction_signals", [])
-        judge_scores.setdefault("suspicious_signals", [])
-        judge_scores.setdefault("workflow_failures", [])
-        judge_scores.setdefault("recommended_changes", [])
+        judge_scores.setdefault(
+            "friction_signals", list(structured_local.get("friction_signals", []))
+        )
+        judge_scores.setdefault(
+            "suspicious_signals", list(structured_local.get("suspicious_signals", []))
+        )
+        judge_scores.setdefault(
+            "workflow_failures", list(structured_local.get("workflow_failures", []))
+        )
+        judge_scores.setdefault(
+            "recommended_changes",
+            list(structured_local.get("recommended_changes", [])),
+        )
+        judge_scores.setdefault(
+            "task_success_factors",
+            dict(structured_local.get("task_success_factors", {})),
+        )
+        judge_scores.setdefault(
+            "friction_breakdown", dict(structured_local.get("friction_breakdown", {}))
+        )
+        judge_scores.setdefault(
+            "workflow_signal_breakdown",
+            dict(structured_local.get("workflow_signal_breakdown", {})),
+        )
+        judge_scores.setdefault(
+            "efficiency_breakdown",
+            dict(structured_local.get("efficiency_breakdown", {})),
+        )
     except (JudgeResponseError, ValueError) as exc:
-        structured_fallback = run_subagent_analysis(trace_payload)
         judge_scores = {
             "task_success": heuristics.get("task_success_estimate", 0.0),
             "user_friction": heuristics.get("user_friction", 0.0),
             "workflow_compliance": heuristics.get("workflow_compliance", 0.0),
             "efficiency": heuristics.get("efficiency", 0.0),
-            "optimization_relevance": structured_fallback.get(
+            "optimization_relevance": structured_local.get(
                 "optimization_relevance", "none"
             ),
-            "reasoning": str(structured_fallback.get("reasoning", "")),
+            "reasoning": str(structured_local.get("reasoning", "")),
             "judge_status": "fallback",
             "judge_error": str(exc),
             "raw_judge_output": getattr(exc, "raw_output", ""),
             "scorer_backend": "external",
             "derived_user_task": derived_user_task,
             "task_context": str(heuristics.get("task_context", "unknown")),
-            "friction_signals": list(structured_fallback.get("friction_signals", [])),
-            "suspicious_signals": list(
-                structured_fallback.get("suspicious_signals", [])
-            ),
-            "workflow_failures": list(structured_fallback.get("workflow_failures", [])),
+            "friction_signals": list(structured_local.get("friction_signals", [])),
+            "suspicious_signals": list(structured_local.get("suspicious_signals", [])),
+            "workflow_failures": list(structured_local.get("workflow_failures", [])),
             "recommended_changes": list(
-                structured_fallback.get("recommended_changes", [])
+                structured_local.get("recommended_changes", [])
             ),
             "task_success_factors": dict(
-                structured_fallback.get("task_success_factors", {})
+                structured_local.get("task_success_factors", {})
             ),
-            "friction_breakdown": dict(
-                structured_fallback.get("friction_breakdown", {})
-            ),
+            "friction_breakdown": dict(structured_local.get("friction_breakdown", {})),
             "workflow_signal_breakdown": dict(
-                structured_fallback.get("workflow_signal_breakdown", {})
+                structured_local.get("workflow_signal_breakdown", {})
             ),
             "efficiency_breakdown": dict(
-                structured_fallback.get("efficiency_breakdown", {})
+                structured_local.get("efficiency_breakdown", {})
             ),
         }
     return merge_interactive_scores(

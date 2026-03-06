@@ -78,6 +78,27 @@ def test_score_interactive_heuristics_includes_breakdowns_and_partial_success():
     assert "tool_count_penalty" in result["efficiency_breakdown"]
 
 
+def test_score_interactive_heuristics_scales_breakdown_when_friction_caps():
+    trace = {
+        "session_id": "s1",
+        "thread_name": "demo",
+        "analysis": {
+            "task_completed": False,
+            "assistant_turn_count": 1,
+            "error_count": 4,
+            "tool_call_count": 2,
+            "user_correction_count": 2,
+            "clarification_question_count": 2,
+        },
+    }
+
+    result = codex_interactive_scoring.score_interactive_heuristics(trace)
+    breakdown_total = sum(result["friction_breakdown"].values())
+
+    assert result["user_friction"] == 1.0
+    assert round(breakdown_total, 3) == result["user_friction"]
+
+
 def test_parse_judge_response_requires_json_object():
     payload = codex_interactive_scoring.parse_judge_response(
         json.dumps(
@@ -578,6 +599,10 @@ def test_format_score_summary_emphasizes_actionable_feedback():
             },
             "friction_breakdown": {"clarification": 0.25, "correction": 0.0},
             "workflow_signal_breakdown": {"branch_created": True, "used_uv": True},
+            "efficiency_breakdown": {
+                "tool_count_penalty": 0.1,
+                "friction_penalty": 0.125,
+            },
         }
     )
 
@@ -585,6 +610,7 @@ def test_format_score_summary_emphasizes_actionable_feedback():
     assert "Workflow gaps: none" in summary
     assert "Recommendations: Clarify README.md demo workflow." in summary
     assert "Breakdowns:" in summary
+    assert "tool_count_penalty" in summary
 
 
 def test_format_score_summary_handles_non_numeric_task_success():
@@ -823,6 +849,54 @@ def test_score_interactive_trace_payload_falls_back_when_repair_fails(monkeypatc
     assert result["judge_status"] == "fallback"
     assert "invalid optimization_relevance" in result["judge_error"]
     assert result["raw_judge_output"] == ""
+
+
+def test_score_interactive_trace_payload_external_success_keeps_local_diagnostics(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        codex_interactive_scoring,
+        "run_codex_judge",
+        lambda *_args, **_kwargs: {
+            "task_success": 0.9,
+            "user_friction": 0.2,
+            "workflow_compliance": 0.7,
+            "efficiency": 0.6,
+            "optimization_relevance": "config",
+            "reasoning": "Judge summary",
+            "judge_status": "ok",
+            "raw_judge_output": '{"task_success":0.9}',
+        },
+    )
+
+    result = codex_interactive_scoring.score_interactive_trace_payload(
+        {
+            "thread_name": "demo",
+            "user_task": "Implement the fix",
+            "analysis_summary": "User corrected the agent.",
+            "analysis": {
+                "task_completed": True,
+                "branch_created": False,
+                "used_uv": True,
+                "ran_tests": False,
+                "ran_lint": False,
+                "ran_format": False,
+                "tool_call_count": 12,
+                "user_correction_count": 2,
+                "clarification_question_count": 1,
+            },
+        },
+        scoring_backend="external",
+    )
+
+    assert result["scorer_backend"] == "external"
+    assert "high_corrections" in result["friction_signals"]
+    assert "missing_branch" in result["workflow_failures"]
+    assert result["recommended_changes"]
+    assert result["task_success_factors"]
+    assert result["friction_breakdown"]
+    assert result["workflow_signal_breakdown"]
+    assert result["efficiency_breakdown"]
 
 
 def test_score_interactive_trace_payload_falls_back_when_repair_command_fails(
