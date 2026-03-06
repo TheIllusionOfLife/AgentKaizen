@@ -157,10 +157,10 @@ def test_run_codex_judge_raises_clear_error_when_no_agent_message(monkeypatch):
 
     try:
         codex_interactive_scoring.run_codex_judge({"analysis_summary": "x"})
-    except RuntimeError as exc:
+    except codex_interactive_scoring.JudgeResponseError as exc:
         assert "Could not find judge response" in str(exc)
     else:
-        raise AssertionError("Expected RuntimeError")
+        raise AssertionError("Expected JudgeResponseError")
 
 
 def test_run_codex_judge_wraps_timeout(monkeypatch):
@@ -173,10 +173,10 @@ def test_run_codex_judge_wraps_timeout(monkeypatch):
         codex_interactive_scoring.run_codex_judge(
             {"analysis_summary": "x"}, timeout_seconds=30
         )
-    except RuntimeError as exc:
+    except codex_interactive_scoring.JudgeResponseError as exc:
         assert "timed out" in str(exc)
     else:
-        raise AssertionError("Expected RuntimeError")
+        raise AssertionError("Expected JudgeResponseError")
 
 
 def test_run_codex_judge_wraps_initial_prompt_runtimeerror(monkeypatch):

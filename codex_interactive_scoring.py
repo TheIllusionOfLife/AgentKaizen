@@ -217,6 +217,8 @@ def run_codex_judge(
         )
         parsed = parse_judge_response(raw_response)
         return {**parsed, "judge_status": "ok", "raw_judge_output": raw_response}
+    except RuntimeError as exc:
+        raise JudgeResponseError(str(exc)) from exc
     except ValueError as exc:
         try:
             repair_response = _run_codex_prompt(
@@ -300,7 +302,8 @@ def main(argv: list[str] | None = None) -> int:
         print("--trace-file is required.", file=sys.stderr)
         return 2
 
-    trace = json.loads(open(args.trace_file, encoding="utf-8").read())
+    with open(args.trace_file, encoding="utf-8") as trace_file:
+        trace = json.load(trace_file)
 
     @weave.op()
     def score_interactive_trace(trace_payload: dict[str, Any]) -> dict[str, Any]:
