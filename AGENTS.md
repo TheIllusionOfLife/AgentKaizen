@@ -81,7 +81,7 @@ When changing CLI behavior:
 - Interactive sync seeds the state file on the first run and uploads nothing on that initial pass. This prevents backfilling the entire local history unexpectedly.
 - Interactive trace redaction is enabled by default. Preserve that default unless there is a strong reason to change it.
 - Offline evals compare variants inside temporary workspaces. Do not mutate the real repo as part of evaluation logic.
-- `codex-eval` adds `--skip-git-repo-check` for temp workspaces automatically.
+- `codex-eval` automatically adds `--skip-git-repo-check` to the Codex invocation unless it was already supplied.
 - Interactive scoring has two paths: a default structured local analysis path and an older external Codex-judge path. Prefer the default path unless you are intentionally changing the judge behavior.
 - Optional eval case fields must stay optional in the runner:
   - `response_schema` activates Weave's built-in JSON/schema scorers

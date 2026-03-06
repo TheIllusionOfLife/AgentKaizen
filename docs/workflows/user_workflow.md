@@ -51,7 +51,7 @@ uv run codex-eval \
 ```
 - Compare baseline vs variants in Weave Evals.
 - Gate candidates when quality is similar but latency/tokens regress.
-- `codex-eval` runs variants in temp workspaces and automatically adds `--skip-git-repo-check`.
+- `codex-eval` runs variants in temp workspaces and automatically adds `--skip-git-repo-check` unless you already passed it.
 
 Language-steering example:
 ```bash
