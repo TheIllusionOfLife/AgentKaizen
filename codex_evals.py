@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -11,9 +12,16 @@ from pathlib import Path
 from typing import Any
 
 import weave
+from pydantic import BaseModel, ConfigDict, create_model
+from weave.scorers import (
+    EmbeddingSimilarityScorer,
+    PydanticScorer,
+    ValidJSONScorer,
+)
 
 from codex_scoring import (
     score_contains_all,
+    score_exact_match,
     score_file_path_citations,
     score_forbidden_absent,
     score_json_validity,
@@ -28,13 +36,47 @@ from codex_weave import (
 )
 
 
+class CaseLoadError(ValueError):
+    pass
+
+
+_SCHEMA_MODEL_CACHE: dict[str, type[BaseModel]] = {}
+
+
 def load_cases_jsonl(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        raise CaseLoadError(f"Case path not found: {path}")
+
     rows: list[dict[str, Any]] = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        stripped = line.strip()
-        if not stripped:
-            continue
-        rows.append(json.loads(stripped))
+    if path.is_dir():
+        paths = sorted(path.glob("*.jsonl"))
+        if not paths:
+            raise CaseLoadError(f"No JSONL case files found in directory: {path}")
+    elif path.is_file():
+        paths = [path]
+    else:
+        raise CaseLoadError(f"Unsupported case path: {path}")
+
+    for case_path in paths:
+        for line_number, line in enumerate(
+            case_path.read_text(encoding="utf-8").splitlines(), start=1
+        ):
+            stripped = line.strip()
+            if not stripped:
+                continue
+            try:
+                row = json.loads(stripped)
+            except json.JSONDecodeError as exc:
+                raise CaseLoadError(
+                    f"Malformed JSON in {case_path.name} at line {line_number}: {exc.msg}"
+                ) from exc
+            if not isinstance(row, dict):
+                raise CaseLoadError(
+                    f"Non-object JSON in {case_path.name} at line {line_number}: got {type(row).__name__}"
+                ) from None
+            if "suite" not in row:
+                row["suite"] = case_path.stem
+            rows.append(row)
     return rows
 
 
@@ -166,11 +208,181 @@ def copy_workspace(src_root: Path, dst_root: Path) -> None:
 
 contains_all_scorer = weave.op()(score_contains_all)
 forbidden_absent_scorer = weave.op()(score_forbidden_absent)
+exact_match_scorer = weave.op()(score_exact_match)
 max_chars_scorer = weave.op()(score_max_chars)
 json_validity_scorer = weave.op()(score_json_validity)
 required_sections_scorer = weave.op()(score_required_sections)
 file_path_citations_scorer = weave.op()(score_file_path_citations)
 token_usage_scorer = weave.op()(score_token_usage)
+
+
+def _extract_output_text(output: str | dict[str, Any]) -> str:
+    if isinstance(output, dict):
+        value = output.get("text", "")
+        return value if isinstance(value, str) else str(value)
+    return output
+
+
+def _json_schema_to_python_type(
+    schema: dict[str, Any], model_name: str
+) -> type[Any] | Any:
+    schema_type = schema.get("type", "string")
+    if isinstance(schema_type, list):
+        types = [item for item in schema_type if item != "null"]
+        base_type = (
+            _json_schema_to_python_type({**schema, "type": types[0]}, model_name)
+            if types
+            else Any
+        )
+        return base_type | None
+    if schema_type == "object":
+        return _pydantic_model_from_json_schema(schema, model_name=model_name)
+    if schema_type == "array":
+        item_schema = schema.get("items", {})
+        if not isinstance(item_schema, dict):
+            item_schema = {}
+        return list[_json_schema_to_python_type(item_schema, f"{model_name}Item")]
+    if schema_type == "integer":
+        return int
+    if schema_type == "number":
+        return float
+    if schema_type == "boolean":
+        return bool
+    return str
+
+
+def _pydantic_model_from_json_schema(
+    schema: dict[str, Any], *, model_name: str = "EvalResponse"
+) -> type[BaseModel]:
+    cache_key = json.dumps(schema, sort_keys=True)
+    cached = _SCHEMA_MODEL_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+
+    properties = schema.get("properties", {})
+    if not isinstance(properties, dict):
+        properties = {}
+    required = schema.get("required", [])
+    if not isinstance(required, list):
+        required = []
+    required_fields = {str(item) for item in required}
+    fields: dict[str, tuple[Any, Any]] = {}
+    for field_name, field_schema in properties.items():
+        normalized_schema = field_schema if isinstance(field_schema, dict) else {}
+        annotation = _json_schema_to_python_type(
+            normalized_schema, f"{model_name}{str(field_name).title()}"
+        )
+        if field_name in required_fields:
+            fields[str(field_name)] = (annotation, ...)
+        else:
+            fields[str(field_name)] = (annotation | None, None)
+
+    model = create_model(
+        model_name,
+        __config__=ConfigDict(extra="forbid"),
+        **fields,
+    )
+    _SCHEMA_MODEL_CACHE[cache_key] = model
+    return model
+
+
+class BuiltinValidJSONCaseScorer(weave.Scorer):
+    name: str = "builtin_json_validity"
+    column_map: dict[str, str] | None = {"response_schema": "response_schema"}
+
+    @weave.op()
+    def score(
+        self,
+        *,
+        output: str | dict[str, Any],
+        require_json: bool = False,
+        response_schema: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        del require_json
+        if response_schema is None:
+            return {"pass": True, "applicable": False, "json_valid": None}
+        result = ValidJSONScorer().score(output=_extract_output_text(output))
+        json_valid = bool(result.get("json_valid"))
+        return {"pass": json_valid, "applicable": True, "json_valid": json_valid}
+
+
+class BuiltinPydanticCaseScorer(weave.Scorer):
+    name: str = "builtin_pydantic"
+    column_map: dict[str, str] | None = {"response_schema": "response_schema"}
+
+    @weave.op()
+    def score(
+        self,
+        *,
+        output: str | dict[str, Any],
+        response_schema: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        if response_schema is None:
+            return {"pass": True, "applicable": False, "valid_pydantic": None}
+        model = _pydantic_model_from_json_schema(response_schema)
+        result = PydanticScorer(model=model).score(output=_extract_output_text(output))
+        valid_pydantic = bool(result.get("valid_pydantic"))
+        return {
+            "pass": valid_pydantic,
+            "applicable": True,
+            "valid_pydantic": valid_pydantic,
+        }
+
+
+class BuiltinEmbeddingSimilarityCaseScorer(weave.Scorer):
+    name: str = "builtin_embedding_similarity"
+    column_map: dict[str, str] | None = {"reference_output": "reference_output"}
+    threshold: float = 0.8
+
+    @weave.op()
+    async def score(
+        self,
+        *,
+        output: str | dict[str, Any],
+        reference_output: str | None = None,
+    ) -> dict[str, Any]:
+        if not reference_output:
+            return {
+                "pass": True,
+                "applicable": False,
+                "similarity_score": None,
+                "is_similar": None,
+            }
+        if not os.environ.get("OPENAI_API_KEY"):
+            return {
+                "pass": True,
+                "applicable": False,
+                "similarity_score": None,
+                "is_similar": None,
+                "skipped_reason": "missing_openai_api_key",
+            }
+        result = await EmbeddingSimilarityScorer(threshold=self.threshold).score(
+            output=_extract_output_text(output), target=reference_output
+        )
+        is_similar = bool(result.get("is_similar"))
+        similarity_score = result.get("similarity_score")
+        return {
+            "pass": is_similar,
+            "applicable": True,
+            "similarity_score": similarity_score,
+            "is_similar": is_similar,
+        }
+
+
+def build_eval_scorers() -> list[Any]:
+    return [
+        contains_all_scorer,
+        forbidden_absent_scorer,
+        exact_match_scorer,
+        max_chars_scorer,
+        json_validity_scorer,
+        required_sections_scorer,
+        file_path_citations_scorer,
+        BuiltinValidJSONCaseScorer(),
+        BuiltinPydanticCaseScorer(),
+        BuiltinEmbeddingSimilarityCaseScorer(),
+        token_usage_scorer,
+    ]
 
 
 def normalize_codex_args(codex_args: list[str]) -> list[str]:
@@ -224,8 +436,8 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--cases",
-        default="evals/cases.jsonl",
-        help="Path to JSONL evaluation cases",
+        default="evals/cases",
+        help="Path to a JSONL evaluation file or directory of JSONL case suites",
     )
     parser.add_argument(
         "--variant-file",
@@ -337,6 +549,34 @@ def _quality_score(summary: dict[str, Any], quality_keys: list[str]) -> float:
         if isinstance(applicable, (int, float)):
             return float(applicable)
 
+        applicable_summary = scorer_summary.get("applicable", {})
+        if isinstance(applicable_summary, dict) and (
+            "true_fraction" in applicable_summary
+            or "count" in applicable_summary
+            or "true_count" in applicable_summary
+            or "false_count" in applicable_summary
+        ):
+            applicable_fraction = float(
+                applicable_summary.get("true_fraction", 0.0) or 0.0
+            )
+            applicable_count = _count_from_stats(applicable_summary) or row_count
+            if applicable_count > 0:
+                return applicable_fraction * applicable_count
+
+        exact_match_summary = scorer_summary.get("exact_match_required", {})
+        if isinstance(exact_match_summary, dict) and (
+            "true_fraction" in exact_match_summary
+            or "count" in exact_match_summary
+            or "true_count" in exact_match_summary
+            or "false_count" in exact_match_summary
+        ):
+            exact_match_fraction = float(
+                exact_match_summary.get("true_fraction", 0.0) or 0.0
+            )
+            exact_match_count = _count_from_stats(exact_match_summary) or row_count
+            if exact_match_count > 0:
+                return exact_match_fraction * exact_match_count
+
         if key == "score_json_validity":
             require_summary = scorer_summary.get("require_json", {})
             require_fraction = float(
@@ -386,6 +626,15 @@ def _quality_score(summary: dict[str, Any], quality_keys: list[str]) -> float:
 def _active_quality_keys(summary: dict[str, Any]) -> list[str]:
     keys = ["score_contains_all", "score_forbidden_absent", "score_max_chars"]
 
+    exact_match_required = float(
+        summary.get("score_exact_match", {})
+        .get("exact_match_required", {})
+        .get("true_fraction", 0.0)
+        or 0.0
+    )
+    if exact_match_required > 0.0:
+        keys.append("score_exact_match")
+
     json_required_fraction = float(
         summary.get("score_json_validity", {})
         .get("require_json", {})
@@ -413,6 +662,33 @@ def _active_quality_keys(summary: dict[str, Any]) -> list[str]:
     if require_paths_fraction > 0.0:
         keys.append("score_file_path_citations")
 
+    builtin_json_fraction = float(
+        summary.get("builtin_json_validity", {})
+        .get("applicable", {})
+        .get("true_fraction", 0.0)
+        or 0.0
+    )
+    if builtin_json_fraction > 0.0:
+        keys.append("builtin_json_validity")
+
+    builtin_pydantic_fraction = float(
+        summary.get("builtin_pydantic", {})
+        .get("applicable", {})
+        .get("true_fraction", 0.0)
+        or 0.0
+    )
+    if builtin_pydantic_fraction > 0.0:
+        keys.append("builtin_pydantic")
+
+    builtin_similarity_fraction = float(
+        summary.get("builtin_embedding_similarity", {})
+        .get("applicable", {})
+        .get("true_fraction", 0.0)
+        or 0.0
+    )
+    if builtin_similarity_fraction > 0.0:
+        keys.append("builtin_embedding_similarity")
+
     return keys
 
 
@@ -430,7 +706,12 @@ def rank_variant_results(
     active_quality_keys = (
         _active_quality_keys(baseline_summary)
         if baseline_item
-        else ["score_contains_all", "score_forbidden_absent", "score_max_chars"]
+        else [
+            "score_contains_all",
+            "score_forbidden_absent",
+            "score_exact_match",
+            "score_max_chars",
+        ]
     )
     baseline_quality = (
         _quality_score(baseline_summary, active_quality_keys) if baseline_item else 0.0
@@ -495,10 +776,14 @@ def render_ranked_summary_table(ranked: list[dict[str, Any]]) -> str:
                 f"   quality_delta_vs_baseline: {item['quality_delta_vs_baseline']:.3f}",
                 f"   contains_pass: {_extract_true_fraction(summary, 'score_contains_all'):.3f}",
                 f"   forbidden_pass: {_extract_true_fraction(summary, 'score_forbidden_absent'):.3f}",
+                f"   exact_match_pass: {_extract_true_fraction(summary, 'score_exact_match'):.3f}",
                 f"   max_chars_pass: {_extract_true_fraction(summary, 'score_max_chars'):.3f}",
                 f"   json_pass: {_extract_true_fraction(summary, 'score_json_validity'):.3f}",
+                f"   builtin_json_pass: {_extract_true_fraction(summary, 'builtin_json_validity'):.3f}",
+                f"   schema_pass: {_extract_true_fraction(summary, 'builtin_pydantic'):.3f}",
                 f"   sections_pass: {_extract_true_fraction(summary, 'score_required_sections'):.3f}",
                 f"   file_paths_pass: {_extract_true_fraction(summary, 'score_file_path_citations'):.3f}",
+                f"   semantic_pass: {_extract_true_fraction(summary, 'builtin_embedding_similarity'):.3f}",
                 f"   latency_mean: {item['latency_mean'] if item['latency_mean'] is not None else 'n/a'}",
                 f"   total_tokens_mean: {item['token_mean'] if item['token_mean'] is not None else 'n/a'}",
                 f"   gate_pass: {item['gate_pass']}",
@@ -521,10 +806,14 @@ def main(argv: list[str] | None = None) -> int:
         print(str(exc), file=sys.stderr)
         return 2
 
-    weave.init(project_path)
-
     repo_root = Path.cwd()
-    cases = load_cases_jsonl(Path(args.cases))
+    try:
+        cases = load_cases_jsonl(Path(args.cases))
+    except CaseLoadError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+    weave.init(project_path)
     variants = _variants_from_args(args.variant_file)
 
     variant_results: list[dict[str, Any]] = []
@@ -561,15 +850,7 @@ def main(argv: list[str] | None = None) -> int:
             evaluation = weave.Evaluation(
                 name=f"codex-doc-impact-{variant['name']}",
                 dataset=cases,
-                scorers=[
-                    contains_all_scorer,
-                    forbidden_absent_scorer,
-                    max_chars_scorer,
-                    json_validity_scorer,
-                    required_sections_scorer,
-                    file_path_citations_scorer,
-                    token_usage_scorer,
-                ],
+                scorers=build_eval_scorers(),
             )
             result = asyncio.run(evaluation.evaluate(model))
             item = {"variant": variant["name"], "summary": result}

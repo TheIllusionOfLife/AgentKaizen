@@ -47,16 +47,16 @@ The first tracks a single Codex execution. The second reconstructs an entire loc
 This repo uses `weave.Model` for evaluation-time app versioning, not for a full standalone model registry. A variant is effectively "this repo state plus these edits plus this Codex config," evaluated against a shared case set.
 
 ### Multimodal support
-The current implementation is text-first. It does not preserve uploaded images or other multimodal prompt content as structured Weave inputs.
+The current implementation preserves structured multimodal prompt and message blocks for text and image inputs while keeping flattened text fields for compatibility with existing scoring and summaries.
 
 ### Redaction strategy
-The project currently performs custom pre-upload redaction for interactive traces. That choice was made because the repo needs to sanitize:
+The project performs hybrid redaction for traced payloads: custom pre-upload sanitization plus Weave's built-in PII redaction. The custom layer is still needed to sanitize:
 - tokens and auth headers
 - local filesystem paths
 - usernames embedded in paths
 - session-specific instruction boilerplate
 
-Weave's built-in PII redaction could still be added later, but it would be additive rather than a complete replacement.
+Weave's built-in PII redaction is enabled in the current runtime, and it remains additive rather than a complete replacement.
 
 ### Operational environment variables
 This project currently relies on environment variables for operational Weave behavior instead of hardcoded runtime settings. That is usually the right fit for:

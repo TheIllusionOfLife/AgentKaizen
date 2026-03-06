@@ -22,6 +22,46 @@ NUMERIC_SCORE_FIELDS = {
 }
 
 
+def _contains_any(text: str, needles: list[str]) -> bool:
+    lowered = text.lower()
+    return any(needle in lowered for needle in needles)
+
+
+def classify_task_context(
+    trace_payload: dict[str, Any], analysis: dict[str, Any]
+) -> str:
+    combined_text = " ".join(
+        [
+            str(trace_payload.get("user_task", "")),
+            str(trace_payload.get("thread_name", "")),
+            str(trace_payload.get("analysis_summary", "")),
+        ]
+    ).lower()
+    if _contains_any(combined_text, ["review", "code review"]):
+        return "review"
+    if _contains_any(combined_text, ["readme", "documentation", "wording"]):
+        return "docs_only"
+    if "agents.md" not in combined_text and _contains_any(combined_text, ["docs"]):
+        return "docs_only"
+    if _contains_any(
+        combined_text,
+        [
+            "agents.md",
+            "fix",
+            "implement",
+            "feature",
+            "bug",
+            "workflow guidance",
+        ],
+    ):
+        return "code_change"
+    if bool(analysis.get("branch_created")) or bool(analysis.get("ran_tests")):
+        return "code_change"
+    if int(analysis.get("tool_call_count") or 0) > 0:
+        return "exploration"
+    return "unknown"
+
+
 class JudgeResponseError(ValueError):
     def __init__(self, message: str, *, raw_output: str = "") -> None:
         super().__init__(message)
@@ -32,14 +72,21 @@ def score_interactive_heuristics(trace: dict[str, Any]) -> dict[str, Any]:
     analysis = trace.get("analysis", {})
     if not isinstance(analysis, dict):
         analysis = {}
-    workflow_signals = [
-        bool(analysis.get("branch_created")),
-        bool(analysis.get("used_uv")),
-        bool(analysis.get("ran_tests")),
-    ]
-    for optional_signal in ("ran_lint", "ran_format"):
-        if optional_signal in analysis:
-            workflow_signals.append(bool(analysis.get(optional_signal)))
+    task_context = classify_task_context(trace, analysis)
+    workflow_signals: list[bool] = []
+    if task_context == "code_change":
+        workflow_signals.extend(
+            [
+                bool(analysis.get("branch_created")),
+                bool(analysis.get("used_uv")),
+                bool(analysis.get("ran_tests")),
+            ]
+        )
+        for optional_signal in ("ran_lint", "ran_format"):
+            if optional_signal in analysis:
+                workflow_signals.append(bool(analysis.get(optional_signal)))
+    elif task_context in {"docs_only", "exploration", "review", "unknown"}:
+        workflow_signals = [True]
     workflow_compliance = sum(1.0 for item in workflow_signals if item) / max(
         1, len(workflow_signals)
     )
@@ -51,6 +98,7 @@ def score_interactive_heuristics(trace: dict[str, Any]) -> dict[str, Any]:
     efficiency = max(0.0, 1.0 - tool_penalty - friction / 2)
     return {
         "task_completed": bool(analysis.get("task_completed")),
+        "task_context": task_context,
         "workflow_compliance": round(workflow_compliance, 3),
         "user_friction": round(friction, 3),
         "efficiency": round(efficiency, 3),
@@ -77,6 +125,12 @@ def format_score_summary(result: dict[str, Any]) -> str:
         f"Outcome: {outcome}",
         "Friction signals: "
         + (", ".join(friction_signals) if friction_signals else "none"),
+        "Suspicious signals: "
+        + (
+            ", ".join(result.get("suspicious_signals", []))
+            if result.get("suspicious_signals")
+            else "none"
+        ),
         "Workflow gaps: "
         + (", ".join(workflow_failures) if workflow_failures else "none"),
         "Recommendations: "
@@ -159,16 +213,17 @@ def merge_interactive_scores(
             judge_scores.get("scorer_backend", DEFAULT_SCORING_BACKEND)
         ),
         "derived_user_task": str(judge_scores.get("derived_user_task", "")),
+        "task_context": str(
+            judge_scores.get(
+                "task_context", heuristic_scores.get("task_context", "unknown")
+            )
+        ),
         "friction_signals": list(judge_scores.get("friction_signals", [])),
+        "suspicious_signals": list(judge_scores.get("suspicious_signals", [])),
         "workflow_failures": list(judge_scores.get("workflow_failures", [])),
         "recommended_changes": list(judge_scores.get("recommended_changes", [])),
         "heuristics": heuristic_scores,
     }
-
-
-def _contains_any(text: str, needles: list[str]) -> bool:
-    lowered = text.lower()
-    return any(needle in lowered for needle in needles)
 
 
 def _derive_relevance(trace_payload: dict[str, Any], analysis: dict[str, Any]) -> str:
@@ -246,8 +301,10 @@ def run_subagent_analysis(trace_payload: dict[str, Any]) -> dict[str, Any]:
         analysis = {}
     heuristics = score_interactive_heuristics(trace_payload)
     derived_user_task = _derive_user_task(trace_payload)
+    task_context = str(heuristics.get("task_context", "unknown"))
 
     friction_signals: list[str] = []
+    suspicious_signals: list[str] = []
     user_correction_count = int(analysis.get("user_correction_count") or 0)
     clarification_count = int(analysis.get("clarification_question_count") or 0)
     tool_call_count = int(analysis.get("tool_call_count") or 0)
@@ -260,21 +317,23 @@ def run_subagent_analysis(trace_payload: dict[str, Any]) -> dict[str, Any]:
     if clarification_count > 0:
         friction_signals.append("clarification_needed")
     if tool_call_count >= 10:
+        suspicious_signals.append("high_tool_count")
         friction_signals.append("high_tool_count")
     if error_count > 0:
         friction_signals.append("execution_errors")
 
     workflow_failures: list[str] = []
-    if not analysis.get("branch_created"):
-        workflow_failures.append("missing_branch")
-    if not analysis.get("used_uv"):
-        workflow_failures.append("missing_uv")
-    if not analysis.get("ran_tests"):
-        workflow_failures.append("missing_tests")
-    if "ran_lint" in analysis and not analysis.get("ran_lint"):
-        workflow_failures.append("missing_lint")
-    if "ran_format" in analysis and not analysis.get("ran_format"):
-        workflow_failures.append("missing_format")
+    if task_context == "code_change":
+        if not analysis.get("branch_created"):
+            workflow_failures.append("missing_branch")
+        if not analysis.get("used_uv"):
+            workflow_failures.append("missing_uv")
+        if not analysis.get("ran_tests"):
+            workflow_failures.append("missing_tests")
+        if "ran_lint" in analysis and not analysis.get("ran_lint"):
+            workflow_failures.append("missing_lint")
+        if "ran_format" in analysis and not analysis.get("ran_format"):
+            workflow_failures.append("missing_format")
 
     relevance = _derive_relevance(trace_payload, analysis)
     recommended_changes = _recommended_changes_for_relevance(
@@ -288,6 +347,8 @@ def run_subagent_analysis(trace_payload: dict[str, Any]) -> dict[str, Any]:
         )
     if workflow_failures:
         reasoning_parts.append(f"Workflow gaps: {', '.join(workflow_failures)}.")
+    if suspicious_signals:
+        reasoning_parts.append(f"Suspicious signals: {', '.join(suspicious_signals)}.")
     if relevance != "none":
         reasoning_parts.append(f"Primary improvement surface: {relevance}.")
 
@@ -303,7 +364,9 @@ def run_subagent_analysis(trace_payload: dict[str, Any]) -> dict[str, Any]:
         "raw_judge_output": "",
         "scorer_backend": "subagent",
         "derived_user_task": derived_user_task,
+        "task_context": task_context,
         "friction_signals": friction_signals,
+        "suspicious_signals": suspicious_signals,
         "workflow_failures": workflow_failures,
         "recommended_changes": recommended_changes,
     }
@@ -463,7 +526,9 @@ def score_interactive_trace_payload(
         )
         judge_scores["scorer_backend"] = "external"
         judge_scores["derived_user_task"] = derived_user_task
+        judge_scores["task_context"] = str(heuristics.get("task_context", "unknown"))
         judge_scores.setdefault("friction_signals", [])
+        judge_scores.setdefault("suspicious_signals", [])
         judge_scores.setdefault("workflow_failures", [])
         judge_scores.setdefault("recommended_changes", [])
     except (JudgeResponseError, ValueError) as exc:
@@ -482,7 +547,11 @@ def score_interactive_trace_payload(
             "raw_judge_output": getattr(exc, "raw_output", ""),
             "scorer_backend": "external",
             "derived_user_task": derived_user_task,
+            "task_context": str(heuristics.get("task_context", "unknown")),
             "friction_signals": list(structured_fallback.get("friction_signals", [])),
+            "suspicious_signals": list(
+                structured_fallback.get("suspicious_signals", [])
+            ),
             "workflow_failures": list(structured_fallback.get("workflow_failures", [])),
             "recommended_changes": list(
                 structured_fallback.get("recommended_changes", [])

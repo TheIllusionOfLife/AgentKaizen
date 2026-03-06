@@ -42,6 +42,132 @@ def test_load_cases_jsonl_reads_all_rows(tmp_path):
     assert rows[0]["prompt"] == "p1"
 
 
+def test_load_cases_jsonl_reads_directory_suites(tmp_path):
+    cases_dir = tmp_path / "cases"
+    cases_dir.mkdir()
+    (cases_dir / "core.jsonl").write_text(
+        json.dumps({"id": "core-1", "prompt": "p1", "suite": "core"}) + "\n",
+        encoding="utf-8",
+    )
+    (cases_dir / "workflow.jsonl").write_text(
+        json.dumps({"id": "workflow-1", "prompt": "p2", "suite": "workflow"}) + "\n",
+        encoding="utf-8",
+    )
+
+    rows = codex_evals.load_cases_jsonl(cases_dir)
+
+    assert [row["id"] for row in rows] == ["core-1", "workflow-1"]
+    assert [row["suite"] for row in rows] == ["core", "workflow"]
+
+
+def test_builtin_valid_json_case_scorer_uses_builtin_validator():
+    scorer = codex_evals.BuiltinValidJSONCaseScorer()
+
+    skipped = scorer.score(output="ok", require_json=True, response_schema=None)
+    passed = scorer.score(
+        output='{"a":1}',
+        require_json=False,
+        response_schema={"type": "object", "properties": {}},
+    )
+
+    assert skipped["applicable"] is False
+    assert passed["pass"] is True
+    assert passed["json_valid"] is True
+
+
+def test_builtin_pydantic_case_scorer_validates_response_schema():
+    scorer = codex_evals.BuiltinPydanticCaseScorer()
+    schema = {
+        "type": "object",
+        "properties": {"answer": {"type": "string"}},
+        "required": ["answer"],
+    }
+
+    passed = scorer.score(output='{"answer":"ok"}', response_schema=schema)
+    failed = scorer.score(output='{"count":1}', response_schema=schema)
+
+    assert passed["pass"] is True
+    assert failed["pass"] is False
+
+
+def test_builtin_embedding_similarity_case_scorer_skips_without_reference():
+    scorer = codex_evals.BuiltinEmbeddingSimilarityCaseScorer()
+
+    skipped = codex_evals.asyncio.run(scorer.score(output="ok", reference_output=None))
+
+    assert skipped["applicable"] is False
+
+
+def test_build_eval_scorers_includes_builtin_scorers():
+    scorers = codex_evals.build_eval_scorers()
+    names = {scorer.name for scorer in scorers if getattr(scorer, "name", None)}
+
+    assert "builtin_json_validity" in names
+    assert "builtin_pydantic" in names
+    assert "builtin_embedding_similarity" in names
+
+
+def test_load_cases_jsonl_rejects_missing_path(tmp_path):
+    missing = tmp_path / "missing.jsonl"
+
+    try:
+        codex_evals.load_cases_jsonl(missing)
+    except codex_evals.CaseLoadError as exc:
+        assert "not found" in str(exc)
+    else:
+        raise AssertionError("Expected CaseLoadError")
+
+
+def test_load_cases_jsonl_rejects_empty_directory(tmp_path):
+    cases_dir = tmp_path / "cases"
+    cases_dir.mkdir()
+
+    try:
+        codex_evals.load_cases_jsonl(cases_dir)
+    except codex_evals.CaseLoadError as exc:
+        assert "No JSONL case files" in str(exc)
+    else:
+        raise AssertionError("Expected CaseLoadError")
+
+
+def test_load_cases_jsonl_rejects_malformed_json_with_context(tmp_path):
+    path = tmp_path / "cases.jsonl"
+    path.write_text("{bad json}\n", encoding="utf-8")
+
+    try:
+        codex_evals.load_cases_jsonl(path)
+    except codex_evals.CaseLoadError as exc:
+        assert "cases.jsonl" in str(exc)
+        assert "line 1" in str(exc)
+    else:
+        raise AssertionError("Expected CaseLoadError")
+
+
+def test_load_cases_jsonl_rejects_non_object_rows(tmp_path):
+    path = tmp_path / "cases.jsonl"
+    path.write_text('["not", "an", "object"]\n', encoding="utf-8")
+
+    try:
+        codex_evals.load_cases_jsonl(path)
+    except codex_evals.CaseLoadError as exc:
+        assert "cases.jsonl" in str(exc)
+        assert "line 1" in str(exc)
+        assert "list" in str(exc)
+    else:
+        raise AssertionError("Expected CaseLoadError")
+
+
+def test_main_returns_2_when_cases_fail_to_load(monkeypatch, capsys, tmp_path):
+    monkeypatch.setattr(codex_evals, "ensure_wandb_api_key", lambda: "x")
+    set_wandb_target_env(monkeypatch)
+
+    rc = codex_evals.main(["--cases", str(tmp_path / "missing.jsonl")])
+
+    out = capsys.readouterr()
+    assert rc == 2
+    assert "not found" in out.err
+
+
 def test_apply_variant_edits_append_prepend_replace(tmp_path):
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -444,6 +570,43 @@ def test_quality_score_uses_baseline_active_checks_only():
     )
     candidate = next(item for item in ranked if item["variant"] == "candidate")
     assert candidate["quality_score"] == 1.0
+
+
+def test_quality_score_includes_exact_match_when_baseline_requires_it():
+    ranked = codex_evals.rank_variant_results(
+        [
+            {
+                "variant": "baseline",
+                "summary": {
+                    "score_contains_all": {"pass": {"true_fraction": 1.0}},
+                    "score_forbidden_absent": {"pass": {"true_fraction": 1.0}},
+                    "score_max_chars": {"pass": {"true_fraction": 1.0}},
+                    "score_exact_match": {
+                        "pass": {"true_fraction": 1.0},
+                        "exact_match_required": {"true_fraction": 1.0, "count": 1},
+                    },
+                },
+            },
+            {
+                "variant": "candidate",
+                "summary": {
+                    "score_contains_all": {"pass": {"true_fraction": 1.0}},
+                    "score_forbidden_absent": {"pass": {"true_fraction": 1.0}},
+                    "score_max_chars": {"pass": {"true_fraction": 1.0}},
+                    "score_exact_match": {
+                        "pass": {"true_fraction": 0.0},
+                        "exact_match_required": {"true_fraction": 1.0, "count": 1},
+                    },
+                },
+            },
+        ],
+        quality_similar_threshold=0.02,
+        latency_regression_threshold=0.2,
+        token_regression_threshold=0.2,
+    )
+
+    candidate = next(item for item in ranked if item["variant"] == "candidate")
+    assert candidate["quality_score"] < 1.0
 
 
 def test_main_returns_4_when_candidate_fails_gate(monkeypatch):

@@ -44,6 +44,24 @@ def score_forbidden_absent(
     }
 
 
+def score_exact_match(
+    output: str | dict[str, Any], exact_match: str | None = None
+) -> dict[str, Any]:
+    if exact_match is None:
+        return {
+            "pass": True,
+            "exact_match_required": False,
+            "expected": None,
+        }
+    text = _extract_text(output).strip()
+    return {
+        "pass": text == exact_match,
+        "exact_match_required": True,
+        "expected": exact_match,
+        "actual": text,
+    }
+
+
 def score_max_chars(
     output: str | dict[str, Any], max_chars: int | None
 ) -> dict[str, Any]:
@@ -80,8 +98,14 @@ def score_required_sections(
 ) -> dict[str, Any]:
     if not required_sections:
         return {"pass": True, "missing_sections": [], "required_count": 0}
-    text = _extract_text(output).lower()
-    missing = [section for section in required_sections if section.lower() not in text]
+    text = _extract_text(output)
+    missing: list[str] = []
+    for section in required_sections:
+        pattern = re.compile(
+            rf"(?im)^\s{{0,3}}(?:#+\s*)?{re.escape(section)}(?:\s*$|\s*[:\-].*$|\s*[\(\[].*[)\]]\s*$)"
+        )
+        if not pattern.search(text):
+            missing.append(section)
     return {
         "pass": len(missing) == 0,
         "missing_sections": missing,
@@ -96,7 +120,8 @@ def score_file_path_citations(
         return {"pass": True, "path_count": 0, "require_file_paths": False}
     text = _extract_text(output)
     matches = re.findall(
-        r"(?:^|[\s\[(])([A-Za-z0-9_.\-]+/[A-Za-z0-9_./\-]+\.[A-Za-z0-9_]+)", text
+        r"(?:^|[\s\[(])([A-Za-z0-9_.\-]+/[A-Za-z0-9_./\-]+\.[A-Za-z0-9_]+(?:#L\d+(?:C\d+)?)?)",
+        text,
     )
     return {
         "pass": len(matches) > 0,
@@ -129,6 +154,7 @@ def evaluate_output(
     output: str | dict[str, Any],
     must_contain: list[str] | None = None,
     must_not_contain: list[str] | None = None,
+    exact_match: str | None = None,
     max_chars: int | None = None,
     require_json: bool = False,
     required_sections: list[str] | None = None,
@@ -136,6 +162,7 @@ def evaluate_output(
 ) -> dict[str, Any]:
     contains_result = score_contains_all(output, must_contain or [])
     forbidden_result = score_forbidden_absent(output, must_not_contain or [])
+    exact_match_result = score_exact_match(output, exact_match=exact_match)
     max_chars_result = score_max_chars(output, max_chars)
     json_result = score_json_validity(output, require_json=require_json)
     sections_result = score_required_sections(
@@ -147,6 +174,7 @@ def evaluate_output(
     overall_pass = (
         contains_result["pass"]
         and forbidden_result["pass"]
+        and exact_match_result["pass"]
         and max_chars_result["pass"]
         and json_result["pass"]
         and sections_result["pass"]
@@ -156,6 +184,7 @@ def evaluate_output(
         "pass": overall_pass,
         "score_contains_all": contains_result,
         "score_forbidden_absent": forbidden_result,
+        "score_exact_match": exact_match_result,
         "score_max_chars": max_chars_result,
         "score_json_validity": json_result,
         "score_required_sections": sections_result,

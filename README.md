@@ -78,6 +78,14 @@ uv sync --group dev
 uv run codex-weave --prompt "Say only: ok"
 ```
 
+Attach one or more images to the initial prompt:
+
+```bash
+uv run codex-weave \
+  --prompt "Describe the UI issue in this screenshot" \
+  --image ./artifacts/screenshot.png
+```
+
 Read the prompt from stdin:
 
 ```bash
@@ -120,7 +128,7 @@ uv run codex-casegen \
 ### Compare document or config variants
 ```bash
 uv run codex-eval \
-  --cases evals/cases.jsonl \
+  --cases evals/cases \
   --variant-file evals/variants/example_add_line_to_readme.json \
   --quality-similar-threshold 0.02 \
   --latency-regression-threshold 0.20 \
@@ -150,30 +158,32 @@ This project uses Weave tracing in two distinct modes:
 - one-shot tracing for `codex exec` runs through `codex-weave`
 - full-session ingestion for interactive Codex sessions through `codex-weave-sync-interactive`
 
-The one-shot mode stores a single prompt, command, event stream, final message, usage, and guardrail results. The interactive mode reconstructs an entire session from local Codex session files and stores messages, tool calls, usage, derived task text, and workflow analysis.
+The one-shot mode stores structured prompt content, command, event stream, final message, usage, and guardrail results. The interactive mode reconstructs an entire session from local Codex session files and stores structured message content, tool calls, usage, derived task text, and workflow analysis.
 
 #### 2. Prompts, datasets, scorers, and models
 Prompts in this repo come from:
 - direct `codex-weave` prompts
 - derived user tasks from interactive sessions
-- eval case prompts in `evals/cases.jsonl`
+- eval case prompts in `evals/cases/*.jsonl`
 - generated draft cases from past traces
 
-Datasets in this repo are the eval case files used by `codex-eval`, plus draft case files generated from traces.
+Datasets in this repo are the eval case suite files under `evals/cases/`, plus draft case files generated from traces.
 
-Scorers in this repo are shared functions that check:
+Scorers in this repo are shared functions and Weave built-ins that check:
 - required text
 - forbidden text
 - output length
 - JSON validity
+- schema conformance
 - required sections
 - file path citations
+- semantic similarity when a reference answer is present
 - token usage
 
 Models in this repo are application-level Weave models, not provider SDK wrappers. `codex-eval` uses `CodexVariantModel(weave.Model)` to represent a candidate Codex behavior running inside a temporary workspace with specific config and document variants.
 
 #### 3. Image prompts
-W&B Weave can support multimodal traces, but this project is currently text-first. One-shot tracing accepts a text prompt, and interactive session ingestion flattens message content to text. That means image-bearing prompts are not preserved as first-class multimodal inputs in the current implementation.
+This project now preserves multimodal prompt structure for one-shot `codex exec` runs and interactive session ingestion. Flattened text fields are still retained for backwards compatibility, but traces also keep ordered content blocks and a `modalities` summary.
 
 #### 4. App versioning with `weave.Model`
 This project uses `weave.Model` in offline evals to represent candidate app behavior. Each variant is effectively a versioned Codex application setup:
@@ -184,13 +194,13 @@ This project uses `weave.Model` in offline evals to represent candidate app beha
 This is a lightweight use of app versioning focused on comparison during evals, not a full model-registry workflow.
 
 #### 5. PII redaction
-This repo currently uses custom pre-upload redaction for interactive sessions rather than Weave's built-in PII redaction setting. The main reason is that the repo needs domain-specific sanitization beyond generic PII detection, including:
+This repo uses hybrid redaction for traced content: custom sanitization for repo-specific secrets and path cleanup, plus Weave's built-in PII redaction support. The project-specific layer still handles:
 - API keys and bearer tokens
 - filesystem paths and usernames
 - session-specific metadata cleanup
 - suppression of large instruction boilerplate when deriving the user task
 
-Built-in Weave redaction would still be a reasonable future improvement, but it would complement rather than replace the project-specific sanitization already implemented here.
+Weave's built-in redaction is enabled for one-shot and interactive trace uploads, but it complements rather than replaces the project-specific sanitization above.
 
 ## Architecture
 The core flow is:

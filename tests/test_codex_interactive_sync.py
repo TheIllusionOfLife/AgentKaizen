@@ -124,6 +124,117 @@ def test_build_interactive_trace_extracts_messages_and_usage(tmp_path):
     assert trace["messages"][0]["content"] == "hello"
 
 
+def test_build_interactive_trace_preserves_multimodal_content_blocks(tmp_path):
+    session_file = tmp_path / "rollout.jsonl"
+    session_file.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "timestamp": "2026-03-06T00:00:00Z",
+                        "type": "session_meta",
+                        "payload": {
+                            "id": "abc",
+                            "cwd": "/repo",
+                            "cli_version": "0.110.0",
+                            "timestamp": "2026-03-06T00:00:00Z",
+                        },
+                    }
+                ),
+                json.dumps(
+                    {
+                        "timestamp": "2026-03-06T00:00:01Z",
+                        "type": "response_item",
+                        "payload": {
+                            "type": "message",
+                            "role": "user",
+                            "content": [
+                                {"type": "input_text", "text": "Review this image"},
+                                {
+                                    "type": "input_image",
+                                    "image_url": "file:///tmp/diagram.png",
+                                },
+                            ],
+                        },
+                    }
+                ),
+                json.dumps(
+                    {
+                        "timestamp": "2026-03-06T00:00:02Z",
+                        "type": "event_msg",
+                        "payload": {"type": "task_complete"},
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    trace = codex_interactive_sync.build_interactive_trace(
+        session_file=session_file,
+        thread_name="demo",
+        redactor=codex_interactive_sync.build_redactor([]),
+    )
+
+    assert trace["modalities"] == ["text", "image"]
+    assert trace["messages"][0]["content"] == "Review this image"
+    assert trace["messages"][0]["content_blocks"] == [
+        {"type": "input_text", "text": "Review this image"},
+        {"type": "input_image", "image_url": "file:///tmp/diagram.png"},
+    ]
+    assert trace["user_task"] == "Review this image"
+
+
+def test_build_interactive_trace_sanitizes_image_paths_in_content_blocks(tmp_path):
+    session_file = tmp_path / "rollout.jsonl"
+    session_file.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "timestamp": "2026-03-06T00:00:00Z",
+                        "type": "session_meta",
+                        "payload": {"id": "abc", "cwd": "/repo"},
+                    }
+                ),
+                json.dumps(
+                    {
+                        "timestamp": "2026-03-06T00:00:01Z",
+                        "type": "response_item",
+                        "payload": {
+                            "type": "message",
+                            "role": "user",
+                            "content": [
+                                {"type": "input_text", "text": "Check this image"},
+                                {
+                                    "type": "input_image",
+                                    "image_path": str(
+                                        tmp_path / "nested" / "diagram.png"
+                                    ),
+                                },
+                            ],
+                        },
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    trace = codex_interactive_sync.build_interactive_trace(
+        session_file=session_file,
+        thread_name="demo",
+        redactor=codex_interactive_sync.build_redactor([]),
+    )
+
+    assert trace["messages"][0]["content_blocks"] == [
+        {"type": "input_text", "text": "Check this image"},
+        {"type": "input_image", "image_path": "diagram.png"},
+    ]
+
+
 def test_build_interactive_trace_derives_user_task_and_compact_summary(tmp_path):
     session_file = tmp_path / "rollout.jsonl"
     session_file.write_text(
@@ -350,6 +461,41 @@ def test_redaction_extra_patterns_do_not_reemit_capture_groups():
     redactor = codex_interactive_sync.build_redactor([r"(secret)-value"])
     redacted = redactor("secret-value")
     assert redacted == "[REDACTED]"
+
+
+def test_build_interactive_trace_applies_builtin_pii_redaction(monkeypatch, tmp_path):
+    session_file = tmp_path / "rollout.jsonl"
+    session_file.write_text(
+        json.dumps(
+            {
+                "timestamp": "2026-03-06T00:00:01Z",
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": "email user@example.com",
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        codex_interactive_sync,
+        "apply_builtin_pii_redaction",
+        lambda value, enabled=True: {
+            **value,
+            "messages": [{**value["messages"][0], "content": "[REDACTED]"}],
+        },
+    )
+
+    trace = codex_interactive_sync.build_interactive_trace(
+        session_file=session_file,
+        thread_name="demo",
+        redactor=codex_interactive_sync.build_redactor([]),
+    )
+
+    assert trace["messages"][0]["content"] == "[REDACTED]"
 
 
 def test_build_interactive_trace_sanitizes_path_fields(tmp_path):
@@ -753,6 +899,103 @@ def test_build_interactive_analysis_counts_only_actionable_clarifications():
     )
 
     assert analysis["clarification_question_count"] == 1
+
+
+def test_run_sync_once_uploads_multimodal_trace_payload(monkeypatch, tmp_path):
+    session_root = tmp_path / "sessions"
+    session_dir = session_root / "2026" / "03" / "06"
+    session_dir.mkdir(parents=True)
+    index_file = tmp_path / "session_index.jsonl"
+    state_file = tmp_path / "state.json"
+    session_id = "019cc148-d4d9-71c3-80e7-5b741ebab085"
+    session_file = session_dir / f"rollout-2026-03-06T00-00-00-{session_id}.jsonl"
+    session_file.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "timestamp": "2026-03-06T00:00:00Z",
+                        "type": "session_meta",
+                        "payload": {"id": session_id, "cwd": "/repo"},
+                    }
+                ),
+                json.dumps(
+                    {
+                        "timestamp": "2026-03-06T00:00:01Z",
+                        "type": "response_item",
+                        "payload": {
+                            "type": "message",
+                            "role": "user",
+                            "content": [
+                                {"type": "input_text", "text": "Review this image"},
+                                {
+                                    "type": "input_image",
+                                    "image_url": "file:///tmp/demo.png",
+                                },
+                            ],
+                        },
+                    }
+                ),
+                json.dumps(
+                    {
+                        "timestamp": "2026-03-06T00:00:02Z",
+                        "type": "event_msg",
+                        "payload": {"type": "task_complete"},
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    index_file.write_text(
+        json.dumps(
+            {
+                "id": session_id,
+                "thread_name": "Review this image",
+                "updated_at": "2026-03-06T00:00:02Z",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    state_file.write_text(
+        json.dumps(
+            {
+                "last_processed_updated_at": "2026-03-06T00:00:00Z",
+                "processed_session_ids": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    uploaded = []
+
+    class FakeWeave:
+        def op(self):
+            def deco(fn):
+                def wrapped(trace_payload):
+                    uploaded.append(trace_payload)
+                    return fn(trace_payload)
+
+                return wrapped
+
+            return deco
+
+    monkeypatch.setattr(codex_interactive_sync, "weave", FakeWeave())
+
+    summary = codex_interactive_sync._run_sync_once(
+        session_root=session_root,
+        index_file=index_file,
+        state_file=state_file,
+        quiet_seconds=0,
+        redactor=codex_interactive_sync.build_redactor([]),
+        redaction_enabled=True,
+    )
+
+    assert summary["uploaded"] == 1
+    assert uploaded[-1]["modalities"] == ["text", "image"]
+    assert uploaded[-1]["messages"][0]["content_blocks"][1]["type"] == "input_image"
 
 
 def test_build_interactive_analysis_uses_structured_error_signals_not_keywords():

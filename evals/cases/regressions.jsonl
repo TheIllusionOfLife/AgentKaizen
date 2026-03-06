@@ -1,0 +1,1 @@
+{"id":"regression-file-citations","suite":"regressions","task_type":"code_change","steering_surface":"agents","modalities":["text"],"prompt":"Describe the exact files to inspect for interactive scoring behavior and cite them.","must_contain":["interactive"],"must_not_contain":[],"max_chars":500,"require_json":false,"required_sections":[],"require_file_paths":true}

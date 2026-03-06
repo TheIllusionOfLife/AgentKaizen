@@ -6,6 +6,7 @@ import subprocess
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 import codex_interactive_scoring
+import codex_interactive_sync
 
 from conftest import set_wandb_target_env
 
@@ -129,6 +130,7 @@ def test_merge_interactive_scores_combines_heuristics_and_judge():
             "scorer_backend": "subagent",
             "derived_user_task": "demo task",
             "friction_signals": ["high_corrections"],
+            "suspicious_signals": ["high_tool_count"],
             "workflow_failures": ["missing_branch"],
             "recommended_changes": ["Strengthen AGENTS.md workflow instructions."],
         },
@@ -140,6 +142,7 @@ def test_merge_interactive_scores_combines_heuristics_and_judge():
     assert result["scorer_backend"] == "subagent"
     assert result["derived_user_task"] == "demo task"
     assert result["friction_signals"] == ["high_corrections"]
+    assert result["suspicious_signals"] == ["high_tool_count"]
 
 
 def test_main_missing_wandb_api_key_writes_stderr(monkeypatch, capsys):
@@ -198,6 +201,71 @@ def test_run_subagent_analysis_returns_structured_recommendations():
     assert result["recommended_changes"]
 
 
+def test_run_subagent_analysis_treats_high_tool_count_as_suspicious_not_failure():
+    result = codex_interactive_scoring.run_subagent_analysis(
+        {
+            "thread_name": "demo",
+            "user_task": "Investigate the current implementation",
+            "analysis": {
+                "task_completed": True,
+                "branch_created": False,
+                "used_uv": False,
+                "ran_tests": False,
+                "tool_call_count": 20,
+                "user_correction_count": 0,
+                "clarification_question_count": 0,
+            },
+        }
+    )
+
+    assert "high_tool_count" in result["suspicious_signals"]
+    assert "high_tool_count" not in result["workflow_failures"]
+
+
+def test_run_subagent_analysis_skips_code_workflow_failures_for_docs_only_task():
+    result = codex_interactive_scoring.run_subagent_analysis(
+        {
+            "thread_name": "docs",
+            "user_task": "Update README wording for setup instructions",
+            "analysis": {
+                "task_completed": True,
+                "branch_created": False,
+                "used_uv": False,
+                "ran_tests": False,
+                "ran_lint": False,
+                "ran_format": False,
+                "tool_call_count": 2,
+                "user_correction_count": 0,
+                "clarification_question_count": 0,
+            },
+        }
+    )
+
+    assert result["task_context"] == "docs_only"
+    assert result["workflow_failures"] == []
+
+
+def test_run_subagent_analysis_prefers_review_over_generic_fix_keywords():
+    result = codex_interactive_scoring.run_subagent_analysis(
+        {
+            "thread_name": "review",
+            "user_task": "Review the bug fix for accuracy",
+            "analysis": {
+                "task_completed": True,
+                "branch_created": False,
+                "used_uv": False,
+                "ran_tests": False,
+                "tool_call_count": 1,
+                "user_correction_count": 0,
+                "clarification_question_count": 0,
+            },
+        }
+    )
+
+    assert result["task_context"] == "review"
+    assert result["workflow_failures"] == []
+
+
 def test_run_subagent_analysis_ignores_optional_workflow_failures_when_absent():
     result = codex_interactive_scoring.run_subagent_analysis(
         {
@@ -233,6 +301,7 @@ def test_score_interactive_trace_payload_defaults_to_subagent(monkeypatch):
             "scorer_backend": "subagent",
             "derived_user_task": "demo task",
             "friction_signals": ["high_corrections"],
+            "suspicious_signals": ["high_tool_count"],
             "workflow_failures": [],
             "recommended_changes": ["Update AGENTS.md."],
         },
@@ -262,6 +331,116 @@ def test_score_interactive_trace_payload_defaults_to_subagent(monkeypatch):
 
     assert result["scorer_backend"] == "subagent"
     assert result["optimization_relevance"] == "agents"
+    assert result["suspicious_signals"] == ["high_tool_count"]
+
+
+def test_scoring_main_end_to_end_formats_session_analysis(
+    monkeypatch, capsys, tmp_path
+):
+    trace_file = tmp_path / "trace.json"
+    trace_file.write_text(
+        json.dumps(
+            {
+                "thread_name": "demo",
+                "user_task": "Update README wording for setup instructions",
+                "analysis": {
+                    "task_completed": True,
+                    "branch_created": False,
+                    "used_uv": False,
+                    "ran_tests": False,
+                    "ran_lint": False,
+                    "ran_format": False,
+                    "tool_call_count": 11,
+                    "user_correction_count": 0,
+                    "clarification_question_count": 0,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("WANDB_API_KEY", "x")
+    set_wandb_target_env(monkeypatch)
+    monkeypatch.setattr(codex_interactive_scoring.weave, "init", lambda _project: None)
+    monkeypatch.setattr(codex_interactive_scoring.weave, "op", lambda: lambda fn: fn)
+
+    rc = codex_interactive_scoring.main(["--trace-file", str(trace_file)])
+
+    out = capsys.readouterr()
+    assert rc == 0
+    assert "Task: Update README wording for setup instructions" in out.out
+    assert "Suspicious signals: high_tool_count" in out.out
+    assert "Workflow gaps: none" in out.out
+
+
+def test_whole_session_end_to_end_sync_then_score(monkeypatch, capsys, tmp_path):
+    session_file = tmp_path / "rollout.jsonl"
+    session_file.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "timestamp": "2026-03-06T00:00:00Z",
+                        "type": "session_meta",
+                        "payload": {"id": "abc", "cwd": "/repo"},
+                    }
+                ),
+                json.dumps(
+                    {
+                        "timestamp": "2026-03-06T00:00:01Z",
+                        "type": "response_item",
+                        "payload": {
+                            "type": "message",
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "input_text",
+                                    "text": "Update README wording for setup instructions",
+                                }
+                            ],
+                        },
+                    }
+                ),
+                json.dumps(
+                    {
+                        "timestamp": "2026-03-06T00:00:02Z",
+                        "type": "event_msg",
+                        "payload": {
+                            "type": "agent_message",
+                            "message": "I will update the docs summary.",
+                            "phase": "commentary",
+                        },
+                    }
+                ),
+                json.dumps(
+                    {
+                        "timestamp": "2026-03-06T00:00:03Z",
+                        "type": "event_msg",
+                        "payload": {"type": "task_complete"},
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    trace = codex_interactive_sync.build_interactive_trace(
+        session_file=session_file,
+        thread_name="docs",
+        redactor=codex_interactive_sync.build_redactor([]),
+    )
+    trace_file = tmp_path / "trace.json"
+    trace_file.write_text(json.dumps(trace), encoding="utf-8")
+
+    monkeypatch.setenv("WANDB_API_KEY", "x")
+    set_wandb_target_env(monkeypatch)
+    monkeypatch.setattr(codex_interactive_scoring.weave, "init", lambda _project: None)
+    monkeypatch.setattr(codex_interactive_scoring.weave, "op", lambda: lambda fn: fn)
+
+    rc = codex_interactive_scoring.main(["--trace-file", str(trace_file)])
+
+    out = capsys.readouterr()
+    assert rc == 0
+    assert "Task: Update README wording for setup instructions" in out.out
 
 
 def test_score_interactive_trace_payload_external_backend_falls_back(monkeypatch):
