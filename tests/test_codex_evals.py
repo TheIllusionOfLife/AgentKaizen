@@ -63,8 +63,12 @@ def test_load_cases_jsonl_reads_directory_suites(tmp_path):
 def test_builtin_valid_json_case_scorer_uses_builtin_validator():
     scorer = codex_evals.BuiltinValidJSONCaseScorer()
 
-    skipped = scorer.score(output="ok", require_json=False, response_schema=None)
-    passed = scorer.score(output='{"a":1}', require_json=True, response_schema=None)
+    skipped = scorer.score(output="ok", require_json=True, response_schema=None)
+    passed = scorer.score(
+        output='{"a":1}',
+        require_json=False,
+        response_schema={"type": "object", "properties": {}},
+    )
 
     assert skipped["applicable"] is False
     assert passed["pass"] is True
@@ -135,6 +139,20 @@ def test_load_cases_jsonl_rejects_malformed_json_with_context(tmp_path):
     except codex_evals.CaseLoadError as exc:
         assert "cases.jsonl" in str(exc)
         assert "line 1" in str(exc)
+    else:
+        raise AssertionError("Expected CaseLoadError")
+
+
+def test_load_cases_jsonl_rejects_non_object_rows(tmp_path):
+    path = tmp_path / "cases.jsonl"
+    path.write_text('["not", "an", "object"]\n', encoding="utf-8")
+
+    try:
+        codex_evals.load_cases_jsonl(path)
+    except codex_evals.CaseLoadError as exc:
+        assert "cases.jsonl" in str(exc)
+        assert "line 1" in str(exc)
+        assert "list" in str(exc)
     else:
         raise AssertionError("Expected CaseLoadError")
 

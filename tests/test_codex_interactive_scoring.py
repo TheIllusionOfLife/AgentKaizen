@@ -245,6 +245,27 @@ def test_run_subagent_analysis_skips_code_workflow_failures_for_docs_only_task()
     assert result["workflow_failures"] == []
 
 
+def test_run_subagent_analysis_prefers_review_over_generic_fix_keywords():
+    result = codex_interactive_scoring.run_subagent_analysis(
+        {
+            "thread_name": "review",
+            "user_task": "Review the bug fix for accuracy",
+            "analysis": {
+                "task_completed": True,
+                "branch_created": False,
+                "used_uv": False,
+                "ran_tests": False,
+                "tool_call_count": 1,
+                "user_correction_count": 0,
+                "clarification_question_count": 0,
+            },
+        }
+    )
+
+    assert result["task_context"] == "review"
+    assert result["workflow_failures"] == []
+
+
 def test_run_subagent_analysis_ignores_optional_workflow_failures_when_absent():
     result = codex_interactive_scoring.run_subagent_analysis(
         {

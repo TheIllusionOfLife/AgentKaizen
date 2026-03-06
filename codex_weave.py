@@ -27,6 +27,7 @@ class ParsedEvents:
 
 DEFAULT_PII_REDACTION_FIELDS = [
     "prompt",
+    "input_content",
     "final_message",
     "stderr",
     "content",

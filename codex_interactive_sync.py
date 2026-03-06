@@ -113,7 +113,9 @@ def _normalize_content_blocks(value: Any) -> list[dict[str, Any]]:
             if "image_url" in item and item.get("image_url") is not None:
                 normalized["image_url"] = str(item.get("image_url"))
             if "image_path" in item and item.get("image_path") is not None:
-                normalized["image_path"] = str(item.get("image_path"))
+                normalized["image_path"] = pathlib.Path(
+                    str(item.get("image_path"))
+                ).name
             blocks.append(normalized)
         else:
             blocks.append({"type": "input_text", "text": str(item)})

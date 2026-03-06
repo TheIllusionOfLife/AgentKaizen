@@ -70,7 +70,11 @@ def load_cases_jsonl(path: Path) -> list[dict[str, Any]]:
                 raise CaseLoadError(
                     f"Malformed JSON in {case_path.name} at line {line_number}: {exc.msg}"
                 ) from exc
-            if isinstance(row, dict) and "suite" not in row:
+            if not isinstance(row, dict):
+                raise CaseLoadError(
+                    f"Non-object JSON in {case_path.name} at line {line_number}: got {type(row).__name__}"
+                ) from None
+            if "suite" not in row:
                 row["suite"] = case_path.stem
             rows.append(row)
     return rows
@@ -284,7 +288,7 @@ def _pydantic_model_from_json_schema(
 
 class BuiltinValidJSONCaseScorer(weave.Scorer):
     name: str = "builtin_json_validity"
-    column_map: dict[str, str] | None = {"require_json": "require_json"}
+    column_map: dict[str, str] | None = {"response_schema": "response_schema"}
 
     @weave.op()
     def score(
@@ -294,8 +298,8 @@ class BuiltinValidJSONCaseScorer(weave.Scorer):
         require_json: bool = False,
         response_schema: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        applicable = require_json or response_schema is not None
-        if not applicable:
+        del require_json
+        if response_schema is None:
             return {"pass": True, "applicable": False, "json_valid": None}
         result = ValidJSONScorer().score(output=_extract_output_text(output))
         json_valid = bool(result.get("json_valid"))

@@ -84,6 +84,16 @@ def test_required_sections_match_headings_not_substrings():
     assert result["pass"] is False
 
 
+def test_required_sections_accept_headings_with_parenthetical_suffixes():
+    output = {"text": "## Summary (Optional)\nDetails here", "usage": {}}
+
+    result = codex_scoring.score_required_sections(
+        output, required_sections=["Summary"]
+    )
+
+    assert result["pass"] is True
+
+
 def test_file_path_citations_accept_line_anchors():
     output = {"text": "See src/app.py#L12 for details", "usage": {}}
 

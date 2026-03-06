@@ -102,7 +102,7 @@ def score_required_sections(
     missing: list[str] = []
     for section in required_sections:
         pattern = re.compile(
-            rf"(?im)^\s{{0,3}}(?:#+\s*)?{re.escape(section)}(?:\s*$|\s*[:\-])"
+            rf"(?im)^\s{{0,3}}(?:#+\s*)?{re.escape(section)}(?:\s*$|\s*[:\-].*$|\s*[\(\[].*[)\]]\s*$)"
         )
         if not pattern.search(text):
             missing.append(section)

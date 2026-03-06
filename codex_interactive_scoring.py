@@ -37,6 +37,12 @@ def classify_task_context(
             str(trace_payload.get("analysis_summary", "")),
         ]
     ).lower()
+    if _contains_any(combined_text, ["review", "code review"]):
+        return "review"
+    if _contains_any(combined_text, ["readme", "documentation", "wording"]):
+        return "docs_only"
+    if "agents.md" not in combined_text and _contains_any(combined_text, ["docs"]):
+        return "docs_only"
     if _contains_any(
         combined_text,
         [
@@ -49,10 +55,6 @@ def classify_task_context(
         ],
     ):
         return "code_change"
-    if _contains_any(combined_text, ["readme", "docs", "documentation", "wording"]):
-        return "docs_only"
-    if _contains_any(combined_text, ["review", "code review"]):
-        return "review"
     if bool(analysis.get("branch_created")) or bool(analysis.get("ran_tests")):
         return "code_change"
     if int(analysis.get("tool_call_count") or 0) > 0:

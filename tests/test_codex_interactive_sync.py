@@ -186,6 +186,55 @@ def test_build_interactive_trace_preserves_multimodal_content_blocks(tmp_path):
     assert trace["user_task"] == "Review this image"
 
 
+def test_build_interactive_trace_sanitizes_image_paths_in_content_blocks(tmp_path):
+    session_file = tmp_path / "rollout.jsonl"
+    session_file.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "timestamp": "2026-03-06T00:00:00Z",
+                        "type": "session_meta",
+                        "payload": {"id": "abc", "cwd": "/repo"},
+                    }
+                ),
+                json.dumps(
+                    {
+                        "timestamp": "2026-03-06T00:00:01Z",
+                        "type": "response_item",
+                        "payload": {
+                            "type": "message",
+                            "role": "user",
+                            "content": [
+                                {"type": "input_text", "text": "Check this image"},
+                                {
+                                    "type": "input_image",
+                                    "image_path": str(
+                                        tmp_path / "nested" / "diagram.png"
+                                    ),
+                                },
+                            ],
+                        },
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    trace = codex_interactive_sync.build_interactive_trace(
+        session_file=session_file,
+        thread_name="demo",
+        redactor=codex_interactive_sync.build_redactor([]),
+    )
+
+    assert trace["messages"][0]["content_blocks"] == [
+        {"type": "input_text", "text": "Check this image"},
+        {"type": "input_image", "image_path": "diagram.png"},
+    ]
+
+
 def test_build_interactive_trace_derives_user_task_and_compact_summary(tmp_path):
     session_file = tmp_path / "rollout.jsonl"
     session_file.write_text(

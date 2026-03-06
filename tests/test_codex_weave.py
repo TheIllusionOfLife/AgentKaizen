@@ -160,6 +160,10 @@ def test_build_prompt_content_preserves_text_and_images(tmp_path):
     ]
 
 
+def test_default_pii_redaction_fields_cover_input_content():
+    assert "input_content" in codex_weave.DEFAULT_PII_REDACTION_FIELDS
+
+
 def test_main_returns_error_when_wandb_api_key_missing(monkeypatch, capsys, tmp_path):
     monkeypatch.delenv("WANDB_API_KEY", raising=False)
     monkeypatch.chdir(tmp_path)
