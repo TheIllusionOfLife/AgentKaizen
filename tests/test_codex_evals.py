@@ -60,6 +60,53 @@ def test_load_cases_jsonl_reads_directory_suites(tmp_path):
     assert [row["suite"] for row in rows] == ["core", "workflow"]
 
 
+def test_load_cases_jsonl_rejects_missing_path(tmp_path):
+    missing = tmp_path / "missing.jsonl"
+
+    try:
+        codex_evals.load_cases_jsonl(missing)
+    except codex_evals.CaseLoadError as exc:
+        assert "not found" in str(exc)
+    else:
+        raise AssertionError("Expected CaseLoadError")
+
+
+def test_load_cases_jsonl_rejects_empty_directory(tmp_path):
+    cases_dir = tmp_path / "cases"
+    cases_dir.mkdir()
+
+    try:
+        codex_evals.load_cases_jsonl(cases_dir)
+    except codex_evals.CaseLoadError as exc:
+        assert "No JSONL case files" in str(exc)
+    else:
+        raise AssertionError("Expected CaseLoadError")
+
+
+def test_load_cases_jsonl_rejects_malformed_json_with_context(tmp_path):
+    path = tmp_path / "cases.jsonl"
+    path.write_text("{bad json}\n", encoding="utf-8")
+
+    try:
+        codex_evals.load_cases_jsonl(path)
+    except codex_evals.CaseLoadError as exc:
+        assert "cases.jsonl" in str(exc)
+        assert "line 1" in str(exc)
+    else:
+        raise AssertionError("Expected CaseLoadError")
+
+
+def test_main_returns_2_when_cases_fail_to_load(monkeypatch, capsys, tmp_path):
+    monkeypatch.setattr(codex_evals, "ensure_wandb_api_key", lambda: "x")
+    set_wandb_target_env(monkeypatch)
+
+    rc = codex_evals.main(["--cases", str(tmp_path / "missing.jsonl")])
+
+    out = capsys.readouterr()
+    assert rc == 2
+    assert "not found" in out.err
+
+
 def test_apply_variant_edits_append_prepend_replace(tmp_path):
     workspace = tmp_path / "workspace"
     workspace.mkdir()

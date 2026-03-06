@@ -14,6 +14,7 @@ import weave
 
 from codex_scoring import (
     score_contains_all,
+    score_exact_match,
     score_file_path_citations,
     score_forbidden_absent,
     score_json_validity,
@@ -28,15 +29,37 @@ from codex_weave import (
 )
 
 
+class CaseLoadError(ValueError):
+    pass
+
+
 def load_cases_jsonl(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        raise CaseLoadError(f"Case path not found: {path}")
+
     rows: list[dict[str, Any]] = []
-    paths = sorted(path.glob("*.jsonl")) if path.is_dir() else [path]
+    if path.is_dir():
+        paths = sorted(path.glob("*.jsonl"))
+        if not paths:
+            raise CaseLoadError(f"No JSONL case files found in directory: {path}")
+    elif path.is_file():
+        paths = [path]
+    else:
+        raise CaseLoadError(f"Unsupported case path: {path}")
+
     for case_path in paths:
-        for line in case_path.read_text(encoding="utf-8").splitlines():
+        for line_number, line in enumerate(
+            case_path.read_text(encoding="utf-8").splitlines(), start=1
+        ):
             stripped = line.strip()
             if not stripped:
                 continue
-            row = json.loads(stripped)
+            try:
+                row = json.loads(stripped)
+            except json.JSONDecodeError as exc:
+                raise CaseLoadError(
+                    f"Malformed JSON in {case_path.name} at line {line_number}: {exc.msg}"
+                ) from exc
             if isinstance(row, dict) and "suite" not in row:
                 row["suite"] = case_path.stem
             rows.append(row)
@@ -171,6 +194,7 @@ def copy_workspace(src_root: Path, dst_root: Path) -> None:
 
 contains_all_scorer = weave.op()(score_contains_all)
 forbidden_absent_scorer = weave.op()(score_forbidden_absent)
+exact_match_scorer = weave.op()(score_exact_match)
 max_chars_scorer = weave.op()(score_max_chars)
 json_validity_scorer = weave.op()(score_json_validity)
 required_sections_scorer = weave.op()(score_required_sections)
@@ -391,6 +415,10 @@ def _quality_score(summary: dict[str, Any], quality_keys: list[str]) -> float:
 def _active_quality_keys(summary: dict[str, Any]) -> list[str]:
     keys = ["score_contains_all", "score_forbidden_absent", "score_max_chars"]
 
+    exact_match_required = summary.get("score_exact_match", {}).get("exact_match")
+    if exact_match_required is not None:
+        keys.append("score_exact_match")
+
     json_required_fraction = float(
         summary.get("score_json_validity", {})
         .get("require_json", {})
@@ -435,7 +463,12 @@ def rank_variant_results(
     active_quality_keys = (
         _active_quality_keys(baseline_summary)
         if baseline_item
-        else ["score_contains_all", "score_forbidden_absent", "score_max_chars"]
+        else [
+            "score_contains_all",
+            "score_forbidden_absent",
+            "score_exact_match",
+            "score_max_chars",
+        ]
     )
     baseline_quality = (
         _quality_score(baseline_summary, active_quality_keys) if baseline_item else 0.0
@@ -500,6 +533,7 @@ def render_ranked_summary_table(ranked: list[dict[str, Any]]) -> str:
                 f"   quality_delta_vs_baseline: {item['quality_delta_vs_baseline']:.3f}",
                 f"   contains_pass: {_extract_true_fraction(summary, 'score_contains_all'):.3f}",
                 f"   forbidden_pass: {_extract_true_fraction(summary, 'score_forbidden_absent'):.3f}",
+                f"   exact_match_pass: {_extract_true_fraction(summary, 'score_exact_match'):.3f}",
                 f"   max_chars_pass: {_extract_true_fraction(summary, 'score_max_chars'):.3f}",
                 f"   json_pass: {_extract_true_fraction(summary, 'score_json_validity'):.3f}",
                 f"   sections_pass: {_extract_true_fraction(summary, 'score_required_sections'):.3f}",
@@ -526,10 +560,14 @@ def main(argv: list[str] | None = None) -> int:
         print(str(exc), file=sys.stderr)
         return 2
 
-    weave.init(project_path)
-
     repo_root = Path.cwd()
-    cases = load_cases_jsonl(Path(args.cases))
+    try:
+        cases = load_cases_jsonl(Path(args.cases))
+    except CaseLoadError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+    weave.init(project_path)
     variants = _variants_from_args(args.variant_file)
 
     variant_results: list[dict[str, Any]] = []
@@ -569,6 +607,7 @@ def main(argv: list[str] | None = None) -> int:
                 scorers=[
                     contains_all_scorer,
                     forbidden_absent_scorer,
+                    exact_match_scorer,
                     max_chars_scorer,
                     json_validity_scorer,
                     required_sections_scorer,

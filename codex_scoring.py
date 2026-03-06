@@ -44,6 +44,19 @@ def score_forbidden_absent(
     }
 
 
+def score_exact_match(
+    output: str | dict[str, Any], exact_match: str | None = None
+) -> dict[str, Any]:
+    if exact_match is None:
+        return {"pass": True, "exact_match": None}
+    text = _extract_text(output).strip()
+    return {
+        "pass": text == exact_match,
+        "expected": exact_match,
+        "actual": text,
+    }
+
+
 def score_max_chars(
     output: str | dict[str, Any], max_chars: int | None
 ) -> dict[str, Any]:
@@ -136,6 +149,7 @@ def evaluate_output(
     output: str | dict[str, Any],
     must_contain: list[str] | None = None,
     must_not_contain: list[str] | None = None,
+    exact_match: str | None = None,
     max_chars: int | None = None,
     require_json: bool = False,
     required_sections: list[str] | None = None,
@@ -143,6 +157,7 @@ def evaluate_output(
 ) -> dict[str, Any]:
     contains_result = score_contains_all(output, must_contain or [])
     forbidden_result = score_forbidden_absent(output, must_not_contain or [])
+    exact_match_result = score_exact_match(output, exact_match=exact_match)
     max_chars_result = score_max_chars(output, max_chars)
     json_result = score_json_validity(output, require_json=require_json)
     sections_result = score_required_sections(
@@ -154,6 +169,7 @@ def evaluate_output(
     overall_pass = (
         contains_result["pass"]
         and forbidden_result["pass"]
+        and exact_match_result["pass"]
         and max_chars_result["pass"]
         and json_result["pass"]
         and sections_result["pass"]
@@ -163,6 +179,7 @@ def evaluate_output(
         "pass": overall_pass,
         "score_contains_all": contains_result,
         "score_forbidden_absent": forbidden_result,
+        "score_exact_match": exact_match_result,
         "score_max_chars": max_chars_result,
         "score_json_validity": json_result,
         "score_required_sections": sections_result,

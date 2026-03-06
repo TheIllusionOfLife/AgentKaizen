@@ -11,6 +11,7 @@ def test_evaluate_output_pass_case():
         output="hello world",
         must_contain=["hello"],
         must_not_contain=["forbidden"],
+        exact_match=None,
         max_chars=20,
     )
 
@@ -25,6 +26,7 @@ def test_evaluate_output_violation_case():
         output="too long",
         must_contain=["missing"],
         must_not_contain=["long"],
+        exact_match="ok",
         max_chars=3,
     )
 
@@ -96,3 +98,8 @@ def test_score_token_usage_handles_invalid_values():
     assert token_result["input_tokens"] == 0
     assert token_result["output_tokens"] == 0
     assert token_result["total_tokens"] == 0
+
+
+def test_exact_match_scorer_requires_full_match():
+    assert codex_scoring.score_exact_match("ok", exact_match="ok")["pass"] is True
+    assert codex_scoring.score_exact_match("ok then", exact_match="ok")["pass"] is False
