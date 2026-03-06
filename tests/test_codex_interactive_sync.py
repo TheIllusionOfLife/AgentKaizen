@@ -151,6 +151,44 @@ def test_redaction_applies_default_patterns(tmp_path):
     assert "[REDACTED]" in text
 
 
+def test_redaction_handles_quoted_api_key():
+    redactor = codex_interactive_sync.build_redactor([])
+    redacted = redactor('api-key: "sk-abc123"')
+    assert "sk-abc123" not in redacted
+    assert "[REDACTED]" in redacted
+
+
+def test_build_interactive_trace_sanitizes_path_fields(tmp_path):
+    session_file = tmp_path / "rollout.jsonl"
+    session_file.write_text(
+        json.dumps(
+            {
+                "timestamp": "2026-03-06T00:00:00Z",
+                "type": "session_meta",
+                "payload": {
+                    "id": "abc",
+                    "cwd": "/Users/alice/private-project",
+                    "cli_version": "0.110.0",
+                    "timestamp": "2026-03-06T00:00:00Z",
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    trace = codex_interactive_sync.build_interactive_trace(
+        session_file=session_file,
+        thread_name="demo",
+        redactor=codex_interactive_sync.build_redactor([]),
+    )
+
+    assert trace["cwd"] == "/Users/[REDACTED]/private-project"
+    assert trace["ingest_metadata"][
+        "session_file"
+    ] == codex_interactive_sync._sanitize_path(str(session_file))
+
+
 def test_select_sessions_to_process_is_idempotent():
     index_rows = [
         {

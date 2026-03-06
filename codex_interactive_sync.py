@@ -27,8 +27,8 @@ PARSER_VERSION = 1
 DEFAULT_REDACT_PATTERNS = [
     r"sk-[A-Za-z0-9_-]+",
     r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}",
-    r"(?i)(api[_-]?key\s*[=:]\s*)([^\s\"']+)",
-    r"(?i)(authorization\s*[:=]\s*bearer\s+)([^\s\"']+)",
+    r"(?i)(api[_-]?key\s*[=:]\s*['\"]?)([^\s\"']+)",
+    r"(?i)(authorization\s*[:=]\s*bearer\s+['\"]?)([^\s\"']+)",
 ]
 
 
@@ -70,25 +70,22 @@ def find_session_file(
 
 
 def load_sync_state(path: pathlib.Path) -> dict[str, Any]:
-    if not path.exists():
-        return {"last_processed_updated_at": None, "processed_session_ids": []}
-
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return {"last_processed_updated_at": None, "processed_session_ids": []}
-
-    if not isinstance(payload, dict):
-        return {"last_processed_updated_at": None, "processed_session_ids": []}
-
-    processed_ids = payload.get("processed_session_ids", [])
-    if not isinstance(processed_ids, list):
-        processed_ids = []
-
-    return {
-        "last_processed_updated_at": payload.get("last_processed_updated_at"),
-        "processed_session_ids": [str(item) for item in processed_ids],
-    }
+    if path.exists():
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(payload, dict):
+                processed_ids = payload.get("processed_session_ids", [])
+                if not isinstance(processed_ids, list):
+                    processed_ids = []
+                return {
+                    "last_processed_updated_at": payload.get(
+                        "last_processed_updated_at"
+                    ),
+                    "processed_session_ids": [str(item) for item in processed_ids],
+                }
+        except json.JSONDecodeError:
+            pass
+    return {"last_processed_updated_at": None, "processed_session_ids": []}
 
 
 def save_sync_state(path: pathlib.Path, state: dict[str, Any]) -> None:
@@ -168,6 +165,17 @@ def _as_string(value: Any) -> str:
     return json.dumps(value, ensure_ascii=True)
 
 
+def _sanitize_path(path_value: str) -> str:
+    if not path_value:
+        return path_value
+    home_dir = str(pathlib.Path.home())
+    if path_value.startswith(home_dir):
+        path_value = path_value.replace(home_dir, "~", 1)
+    path_value = re.sub(r"^/Users/[^/]+/", "/Users/[REDACTED]/", path_value)
+    path_value = re.sub(r"^/home/[^/]+/", "/home/[REDACTED]/", path_value)
+    return path_value
+
+
 def build_interactive_trace(
     *,
     session_file: pathlib.Path,
@@ -242,9 +250,9 @@ def build_interactive_trace(
                     total = info.get("total_token_usage", {})
                     if isinstance(total, dict):
                         token_usage = {
-                            "input_tokens": int(total.get("input_tokens", 0) or 0),
-                            "output_tokens": int(total.get("output_tokens", 0) or 0),
-                            "total_tokens": int(total.get("total_tokens", 0) or 0),
+                            "input_tokens": int(total.get("input_tokens") or 0),
+                            "output_tokens": int(total.get("output_tokens") or 0),
+                            "total_tokens": int(total.get("total_tokens") or 0),
                         }
             elif payload_type in {"user_message", "agent_message"}:
                 maybe_text = payload.get("text")
@@ -271,7 +279,7 @@ def build_interactive_trace(
         "source": "codex_interactive",
         "session_id": _as_string(session_meta.get("id") or session_file.stem),
         "thread_name": thread_name,
-        "cwd": _as_string(session_meta.get("cwd")),
+        "cwd": _sanitize_path(redactor(_as_string(session_meta.get("cwd")))),
         "cli_version": _as_string(session_meta.get("cli_version")),
         "started_at": _as_string(session_meta.get("timestamp")),
         "status": status,
@@ -281,7 +289,7 @@ def build_interactive_trace(
         "ingest_metadata": {
             "parser_version": PARSER_VERSION,
             "redaction_enabled": redaction_enabled,
-            "session_file": str(session_file),
+            "session_file": _sanitize_path(redactor(str(session_file))),
             "malformed_lines": malformed_lines,
         },
     }
