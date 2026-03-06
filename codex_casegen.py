@@ -34,6 +34,24 @@ def build_case_from_call_output(
     }
 
 
+def build_case_from_interactive_trace(
+    trace_output: dict[str, Any], max_chars_padding: int
+) -> dict[str, Any]:
+    prompt = str(trace_output.get("thread_name", ""))
+    summary = str(trace_output.get("analysis_summary", ""))
+    max_chars = len(summary) + max_chars_padding
+    return {
+        "prompt": prompt,
+        "must_contain": [],
+        "must_not_contain": [],
+        "max_chars": max_chars,
+        "require_json": False,
+        "required_sections": [],
+        "require_file_paths": False,
+        "source": "interactive",
+    }
+
+
 def redact_prompt(prompt: str, redact_patterns: list[str]) -> str:
     redacted = prompt
     for pattern in redact_patterns:

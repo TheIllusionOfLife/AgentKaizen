@@ -1,6 +1,7 @@
 import json
 import pathlib
 import sys
+from pathlib import Path
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
@@ -104,6 +105,85 @@ def test_apply_variant_edits_rejects_absolute_or_escaping_paths(tmp_path):
             pass
         else:
             raise AssertionError("Expected ValueError")
+
+
+def test_materialize_external_variant_inputs_copies_external_files(tmp_path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    external_file = tmp_path / "skill" / "SKILL.md"
+    external_file.parent.mkdir()
+    external_file.write_text("original skill\n", encoding="utf-8")
+
+    mapping = codex_evals.materialize_external_variant_inputs(
+        workspace,
+        {
+            "name": "candidate",
+            "external_files": [
+                {
+                    "source": str(external_file),
+                    "target": "external_skills/demo/SKILL.md",
+                }
+            ],
+        },
+    )
+
+    copied = workspace / "external_skills" / "demo" / "SKILL.md"
+    assert copied.read_text(encoding="utf-8") == "original skill\n"
+    assert mapping == {str(external_file): Path("external_skills/demo/SKILL.md")}
+
+
+def test_apply_variant_edits_supports_external_scope_with_materialized_mapping(
+    tmp_path,
+):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    external_file = tmp_path / "skill" / "SKILL.md"
+    external_file.parent.mkdir()
+    external_file.write_text("original\n", encoding="utf-8")
+    copied = workspace / "external_skills" / "demo" / "SKILL.md"
+    copied.parent.mkdir(parents=True)
+    copied.write_text("original\n", encoding="utf-8")
+
+    codex_evals.apply_variant_edits(
+        workspace,
+        {
+            "name": "candidate",
+            "file_edits": [
+                {
+                    "source_scope": "external",
+                    "path": str(external_file),
+                    "mode": "append",
+                    "text": "changed\n",
+                }
+            ],
+        },
+        external_path_map={str(external_file): Path("external_skills/demo/SKILL.md")},
+    )
+
+    assert copied.read_text(encoding="utf-8") == "original\nchanged\n"
+
+
+def test_resolve_variant_codex_config_prefers_variant_values():
+    resolved = codex_evals.resolve_variant_codex_config(
+        variant={
+            "codex_config": {
+                "model": "gpt-5",
+                "profile": "safe",
+                "codex_args": ["--full-auto"],
+            }
+        },
+        cli_args={
+            "model": "o3",
+            "profile": "default",
+            "sandbox": "workspace-write",
+            "codex_args": ["--x"],
+        },
+    )
+
+    assert resolved["model"] == "gpt-5"
+    assert resolved["profile"] == "safe"
+    assert resolved["sandbox"] == "workspace-write"
+    assert resolved["codex_args"] == ["--full-auto"]
 
 
 def test_scorers():

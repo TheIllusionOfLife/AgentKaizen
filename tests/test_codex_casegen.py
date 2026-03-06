@@ -87,3 +87,16 @@ def test_main_missing_wandb_api_key_writes_to_stderr(monkeypatch, capsys):
     assert rc == 2
     assert "WANDB_API_KEY" in out.err
     assert out.out == ""
+
+
+def test_build_case_from_interactive_trace():
+    trace = {
+        "thread_name": "How do I optimize AGENTS?",
+        "analysis_summary": "The user had to correct the agent twice.",
+    }
+
+    case = codex_casegen.build_case_from_interactive_trace(trace, max_chars_padding=20)
+
+    assert case["prompt"] == "How do I optimize AGENTS?"
+    assert case["source"] == "interactive"
+    assert case["max_chars"] >= len(trace["analysis_summary"])

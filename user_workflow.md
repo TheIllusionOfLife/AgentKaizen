@@ -1,7 +1,7 @@
 # User Workflow: Improving Codex Behavior with Weave
 
 ## Goal
-Use measurable experiments to improve Codex outputs by iterating on foundational documents (for example `AGENTS.md`, `README.md`, and skills).
+Use measurable experiments to improve Codex outputs by iterating on foundational documents and config surfaces (for example `AGENTS.md`, `README.md`, skills, and Codex profile/config choices).
 
 ## Workflow
 1. Define the objective
@@ -12,13 +12,12 @@ Use measurable experiments to improve Codex outputs by iterating on foundational
 
 3. Create one or more variants
 - Add candidate edits as variant JSON files under `evals/variants/`.
-- Typical target files: `AGENTS.md`, `README.md`, skill docs.
+- Typical targets: `AGENTS.md`, `README.md`, external skill docs, and Codex config overrides.
 
 4. Build/refresh eval cases
 - Add real prompts to `evals/cases.jsonl`.
 - Include checks: `must_contain`, `must_not_contain`, `max_chars`.
 - Add structure checks when needed: `require_json`, `required_sections`, `require_file_paths`.
-
 
 4.5 Generate candidate cases from recent traces (optional bootstrap)
 ```bash
@@ -28,6 +27,13 @@ uv run codex-casegen \
 ```
 - Treat this as a draft; refine checks before relying on scores.
 - Use `--redact-regex` when prompts may include sensitive strings.
+
+4.6 Ingest and score interactive sessions
+```bash
+uv run codex-weave-sync-interactive --once
+uv run codex-score-interactive --trace-file path/to/interactive-trace.json
+```
+- Use interactive traces to find repeated user corrections, workflow violations, and likely optimization surfaces.
 
 5. Run offline comparison
 ```bash
@@ -43,7 +49,7 @@ uv run codex-eval \
 
 6. Review metrics and traces
 - Primary signal: scorer pass rate (`true_fraction`).
-- Inspect trace outputs for quality, tone, and regressions.
+- Inspect trace outputs for quality, tone, regressions, and which surface (`AGENTS.md`, `README.md`, skill, config) appears responsible.
 
 7. Promote the winner
 - Apply the best-performing variant into real docs.
