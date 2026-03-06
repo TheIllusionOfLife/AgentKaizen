@@ -37,7 +37,7 @@ def build_case_from_call_output(
 def build_case_from_interactive_trace(
     trace_output: dict[str, Any], max_chars_padding: int
 ) -> dict[str, Any]:
-    prompt = str(trace_output.get("thread_name", ""))
+    prompt = str(trace_output.get("user_task") or trace_output.get("thread_name", ""))
     summary = str(trace_output.get("analysis_summary", ""))
     max_chars = len(summary) + max_chars_padding
     return {

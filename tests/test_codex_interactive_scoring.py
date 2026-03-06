@@ -141,7 +141,7 @@ def test_run_codex_judge_repairs_invalid_response_once(monkeypatch):
                 (),
                 {
                     "returncode": 0,
-                    "stdout": '\n'.join(
+                    "stdout": "\n".join(
                         [
                             json.dumps(
                                 {
@@ -171,7 +171,7 @@ def test_run_codex_judge_repairs_invalid_response_once(monkeypatch):
                 (),
                 {
                     "returncode": 0,
-                    "stdout": '\n'.join(
+                    "stdout": "\n".join(
                         [
                             json.dumps(
                                 {
