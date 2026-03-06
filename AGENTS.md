@@ -38,4 +38,5 @@ Git history is currently minimal (`Initial commit`), so use clear Conventional C
 
 ## Security & Configuration Tips
 - Keep secrets in `.env.local` (`WANDB_API_KEY=...`) and never commit them.
+- For live tracing/demo workflows, check `.env.local` before concluding `WANDB_API_KEY` is unavailable.
 - Validate guardrails with `--guardrail-mode warn` before enforcing `fail` in automation.

@@ -24,6 +24,7 @@ DEFAULT_POLL_SECONDS = 15
 DEFAULT_QUIET_SECONDS = 30
 MAX_PROCESSED_SESSION_IDS = 10_000
 PARSER_VERSION = 1
+SUMMARY_TEXT_LIMIT = 600
 
 DEFAULT_REDACT_PATTERNS = [
     r"sk-[A-Za-z0-9_-]+",
@@ -86,6 +87,31 @@ def _flatten_message_content(value: Any) -> str:
     if value is None:
         return ""
     return str(value)
+
+
+def _normalize_whitespace(text: str) -> str:
+    return " ".join(text.split())
+
+
+def _truncate_text(text: str, limit: int = SUMMARY_TEXT_LIMIT) -> str:
+    normalized = _normalize_whitespace(text)
+    if len(normalized) <= limit:
+        return normalized
+    return normalized[: limit - 3].rstrip() + "..."
+
+
+def _is_instruction_boilerplate(text: str) -> bool:
+    normalized = _normalize_whitespace(text)
+    if not normalized:
+        return True
+    lowered = normalized.lower()
+    return (
+        lowered.startswith("# agents.md instructions for ")
+        or "<instructions>" in lowered
+        or "<environment_context>" in lowered
+        or "<permissions instructions>" in lowered
+        or "meta-instructions" in lowered
+    )
 
 
 def load_sync_state(path: pathlib.Path) -> dict[str, Any]:
@@ -409,17 +435,31 @@ def _build_interactive_analysis(
     }
 
 
+def _derive_user_task(
+    thread_name: str, messages: list[dict[str, Any]]
+) -> tuple[str, str]:
+    seen: set[str] = set()
+    for msg in messages:
+        if msg.get("role") != "user":
+            continue
+        raw_content = _as_string(msg.get("content"))
+        normalized = _normalize_whitespace(raw_content)
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        if _is_instruction_boilerplate(normalized):
+            continue
+        return normalized, "messages"
+    return _normalize_whitespace(thread_name), "thread_name"
+
+
 def _build_analysis_summary(
-    *, thread_name: str, messages: list[dict[str, Any]], analysis: dict[str, Any]
+    *,
+    thread_name: str,
+    user_task: str,
+    messages: list[dict[str, Any]],
+    analysis: dict[str, Any],
 ) -> str:
-    first_user = next(
-        (
-            _as_string(msg.get("content"))
-            for msg in messages
-            if msg.get("role") == "user"
-        ),
-        "",
-    )
     last_assistant = next(
         (
             _as_string(msg.get("content"))
@@ -430,12 +470,12 @@ def _build_analysis_summary(
     )
     return (
         f"Thread: {thread_name}\n"
-        f"User request: {first_user}\n"
+        f"User request: {_truncate_text(user_task)}\n"
         f"Completed: {analysis['task_completed']}\n"
         f"Tool calls: {analysis['tool_call_count']}\n"
         f"Workflow: branch={analysis['branch_created']} uv={analysis['used_uv']} tests={analysis['ran_tests']}\n"
         f"User corrections: {analysis['user_correction_count']}\n"
-        f"Final assistant message: {last_assistant}"
+        f"Final assistant message: {_truncate_text(last_assistant)}"
     )
 
 
@@ -483,7 +523,9 @@ def build_interactive_trace(
                     {
                         "timestamp": ts,
                         "role": _as_string(payload.get("role")),
-                        "content": redactor(_as_string(payload.get("content"))),
+                        "content": redactor(
+                            _flatten_message_content(payload.get("content"))
+                        ),
                         "phase": _as_string(payload.get("phase")),
                         "source": "response_item",
                     }
@@ -546,11 +588,13 @@ def build_interactive_trace(
         tool_calls=tool_calls,
         status=status,
     )
+    user_task, user_task_source = _derive_user_task(safe_thread_name, messages)
 
     return {
         "source": "codex_interactive",
         "session_id": _as_string(session_meta.get("id") or session_file.stem),
         "thread_name": safe_thread_name,
+        "user_task": user_task,
         "cwd": _sanitize_path(redactor(_as_string(session_meta.get("cwd")))),
         "cli_version": _as_string(session_meta.get("cli_version")),
         "started_at": _as_string(session_meta.get("timestamp")),
@@ -561,6 +605,7 @@ def build_interactive_trace(
         "analysis": analysis,
         "analysis_summary": _build_analysis_summary(
             thread_name=safe_thread_name,
+            user_task=user_task,
             messages=messages,
             analysis=analysis,
         ),
@@ -569,6 +614,7 @@ def build_interactive_trace(
             "redaction_enabled": redaction_enabled,
             "session_file": _sanitize_path(redactor(str(session_file))),
             "malformed_lines": malformed_lines,
+            "user_task_source": user_task_source,
             **(discovery_metadata or {}),
         },
     }

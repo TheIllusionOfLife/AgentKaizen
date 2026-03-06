@@ -122,6 +122,84 @@ def test_build_interactive_trace_extracts_messages_and_usage(tmp_path):
     assert trace["messages"][0]["content"] == "hello"
 
 
+def test_build_interactive_trace_derives_user_task_and_compact_summary(tmp_path):
+    session_file = tmp_path / "rollout.jsonl"
+    session_file.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "timestamp": "2026-03-06T00:00:00Z",
+                        "type": "session_meta",
+                        "payload": {
+                            "id": "abc",
+                            "cwd": "/repo",
+                            "cli_version": "0.110.0",
+                            "timestamp": "2026-03-06T00:00:00Z",
+                        },
+                    }
+                ),
+                json.dumps(
+                    {
+                        "timestamp": "2026-03-06T00:00:01Z",
+                        "type": "response_item",
+                        "payload": {
+                            "type": "message",
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "input_text",
+                                    "text": "# AGENTS.md instructions for /repo\n<INSTRUCTIONS>\nVery long boilerplate",
+                                }
+                            ],
+                        },
+                    }
+                ),
+                json.dumps(
+                    {
+                        "timestamp": "2026-03-06T00:00:02Z",
+                        "type": "event_msg",
+                        "payload": {
+                            "type": "user_message",
+                            "text": "Show me a demo of what's implemented in PR #4.",
+                        },
+                    }
+                ),
+                json.dumps(
+                    {
+                        "timestamp": "2026-03-06T00:00:03Z",
+                        "type": "response_item",
+                        "payload": {
+                            "type": "message",
+                            "role": "assistant",
+                            "content": "I found the relevant merged PR and prepared a live demo.",
+                        },
+                    }
+                ),
+                json.dumps(
+                    {
+                        "timestamp": "2026-03-06T00:00:04Z",
+                        "type": "event_msg",
+                        "payload": {"type": "task_complete"},
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    trace = codex_interactive_sync.build_interactive_trace(
+        session_file=session_file,
+        thread_name="Demo PR #4 implementation",
+        redactor=codex_interactive_sync.build_redactor([]),
+    )
+
+    assert trace["user_task"] == "Show me a demo of what's implemented in PR #4."
+    assert "Show me a demo" in trace["analysis_summary"]
+    assert "# AGENTS.md instructions" not in trace["analysis_summary"]
+
+
 def test_redaction_applies_default_patterns(tmp_path):
     session_file = tmp_path / "rollout.jsonl"
     session_file.write_text(
