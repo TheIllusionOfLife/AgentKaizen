@@ -341,12 +341,21 @@ def _build_interactive_analysis(
     assistant_messages = [msg for msg in messages if msg.get("role") == "assistant"]
     user_messages = [msg for msg in messages if msg.get("role") == "user"]
     commentary_count = sum(1 for msg in messages if msg.get("phase") == "commentary")
-    commands = [_load_tool_command(call) for call in tool_calls]
+    invocation_calls = [
+        call for call in tool_calls if call.get("name") != "function_call_output"
+    ]
+    commands = [_load_tool_command(call) for call in invocation_calls]
     commands = [cmd for cmd in commands if cmd]
 
     def _contains_any(text: str, needles: list[str]) -> bool:
         lowered = text.lower()
         return any(needle in lowered for needle in needles)
+
+    def _safe_split(text: str) -> list[str]:
+        try:
+            return shlex.split(text)
+        except ValueError:
+            return []
 
     user_correction_count = sum(
         1
@@ -367,10 +376,10 @@ def _build_interactive_analysis(
     used_uv = any("uv " in cmd or cmd.startswith("uv") for cmd in commands)
     ran_tests = any("pytest" in cmd or "unittest" in cmd for cmd in commands)
     ran_lint = any(
-        "ruff check" in cmd or "lint" in shlex.split(cmd) for cmd in commands
+        "ruff check" in cmd or "lint" in _safe_split(cmd) for cmd in commands
     )
     ran_format = any(
-        "ruff format" in cmd or "format" in shlex.split(cmd) for cmd in commands
+        "ruff format" in cmd or "format" in _safe_split(cmd) for cmd in commands
     )
     used_skills = any("SKILL.md" in _as_string(msg.get("content")) for msg in messages)
     error_count = sum(
@@ -385,7 +394,7 @@ def _build_interactive_analysis(
         "user_turn_count": len(user_messages),
         "assistant_turn_count": len(assistant_messages),
         "commentary_count": commentary_count,
-        "tool_call_count": len(tool_calls),
+        "tool_call_count": len(invocation_calls),
         "web_search_count": 0,
         "error_count": error_count,
         "task_completed": status == "complete",
@@ -438,6 +447,7 @@ def build_interactive_trace(
     redaction_enabled: bool = True,
     discovery_metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    safe_thread_name = _as_string(redactor(thread_name))
     messages: list[dict[str, Any]] = []
     tool_calls: list[dict[str, Any]] = []
     session_meta: dict[str, Any] = {}
@@ -540,7 +550,7 @@ def build_interactive_trace(
     return {
         "source": "codex_interactive",
         "session_id": _as_string(session_meta.get("id") or session_file.stem),
-        "thread_name": thread_name,
+        "thread_name": safe_thread_name,
         "cwd": _sanitize_path(redactor(_as_string(session_meta.get("cwd")))),
         "cli_version": _as_string(session_meta.get("cli_version")),
         "started_at": _as_string(session_meta.get("timestamp")),
@@ -550,7 +560,7 @@ def build_interactive_trace(
         "token_usage": token_usage,
         "analysis": analysis,
         "analysis_summary": _build_analysis_summary(
-            thread_name=thread_name,
+            thread_name=safe_thread_name,
             messages=messages,
             analysis=analysis,
         ),

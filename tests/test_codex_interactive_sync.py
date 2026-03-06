@@ -510,3 +510,62 @@ def test_build_interactive_trace_adds_analysis_fields(tmp_path):
     assert analysis["ran_tests"] is True
     assert analysis["task_completed"] is True
     assert "please fix this bug" in trace["analysis_summary"]
+
+
+def test_build_interactive_trace_redacts_thread_name(tmp_path):
+    session_file = tmp_path / "rollout.jsonl"
+    session_file.write_text(
+        json.dumps(
+            {
+                "timestamp": "2026-03-06T00:00:00Z",
+                "type": "session_meta",
+                "payload": {
+                    "id": "abc",
+                    "cwd": "/repo",
+                    "cli_version": "0.110.0",
+                    "timestamp": "2026-03-06T00:00:00Z",
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    trace = codex_interactive_sync.build_interactive_trace(
+        session_file=session_file,
+        thread_name="Contact me at user@example.com",
+        redactor=codex_interactive_sync.build_redactor([]),
+    )
+
+    assert "user@example.com" not in trace["thread_name"]
+    assert "[REDACTED]" in trace["thread_name"]
+    assert "user@example.com" not in trace["analysis_summary"]
+
+
+def test_build_interactive_analysis_counts_only_invocations():
+    analysis = codex_interactive_sync._build_interactive_analysis(
+        messages=[],
+        tool_calls=[
+            {"name": "exec_command", "arguments": json.dumps({"cmd": "uv run pytest"})},
+            {"name": "function_call_output", "output": "ok"},
+        ],
+        status="complete",
+    )
+
+    assert analysis["tool_call_count"] == 1
+
+
+def test_build_interactive_analysis_handles_invalid_shell_syntax():
+    analysis = codex_interactive_sync._build_interactive_analysis(
+        messages=[],
+        tool_calls=[
+            {
+                "name": "exec_command",
+                "arguments": json.dumps({"cmd": 'python -c "unterminated'}),
+            }
+        ],
+        status="complete",
+    )
+
+    assert analysis["ran_lint"] is False
+    assert analysis["ran_format"] is False

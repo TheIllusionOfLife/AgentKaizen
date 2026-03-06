@@ -186,6 +186,53 @@ def test_resolve_variant_codex_config_prefers_variant_values():
     assert resolved["codex_args"] == ["--full-auto"]
 
 
+def test_variant_file_edits_rejects_non_list_file_edits():
+    try:
+        codex_evals._variant_file_edits({"file_edits": "bad"})
+    except TypeError as exc:
+        assert "file_edits" in str(exc)
+    else:
+        raise AssertionError("Expected TypeError")
+
+
+def test_apply_variant_edits_rejects_unknown_source_scope(tmp_path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / "AGENTS.md").write_text("x", encoding="utf-8")
+
+    try:
+        codex_evals.apply_variant_edits(
+            workspace,
+            {
+                "name": "bad",
+                "file_edits": [
+                    {
+                        "path": "AGENTS.md",
+                        "source_scope": "mystery",
+                        "mode": "append",
+                        "text": "x",
+                    }
+                ],
+            },
+        )
+    except ValueError as exc:
+        assert "Unsupported source_scope" in str(exc)
+    else:
+        raise AssertionError("Expected ValueError")
+
+
+def test_resolve_variant_codex_config_rejects_string_codex_args():
+    try:
+        codex_evals.resolve_variant_codex_config(
+            variant={"name": "bad", "codex_config": {"codex_args": "--full-auto"}},
+            cli_args={},
+        )
+    except ValueError as exc:
+        assert "codex_args" in str(exc)
+    else:
+        raise AssertionError("Expected ValueError")
+
+
 def test_scorers():
     assert (
         codex_evals.score_contains_all("hello world", ["hello", "world"])["pass"]

@@ -266,7 +266,9 @@ def main(argv: list[str] | None = None) -> int:
             max_chars_padding=args.max_chars_padding,
             redact_patterns=args.redact_regex,
         )
-        new_cases = deduplicate_cases_by_prompt([*new_cases, *interactive_cases])
+        new_cases = deduplicate_cases_by_prompt([*new_cases, *interactive_cases])[
+            : args.limit
+        ]
 
     out_path = Path(args.output).expanduser().resolve()
     if args.append:

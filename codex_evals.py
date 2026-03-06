@@ -45,7 +45,9 @@ def load_variant_file(path: Path) -> dict[str, Any]:
 
 def _variant_file_edits(variant: dict[str, Any]) -> list[dict[str, Any]]:
     file_edits = variant.get("file_edits")
-    if isinstance(file_edits, list):
+    if "file_edits" in variant:
+        if not isinstance(file_edits, list):
+            raise TypeError("variant.file_edits must be a list")
         return file_edits
     edits = variant.get("edits", [])
     normalized: list[dict[str, Any]] = []
@@ -95,8 +97,10 @@ def apply_variant_edits(
                     f"External edit target not materialized: {edit['path']}"
                 )
             rel_path = mapped_path
-        else:
+        elif source_scope == "repo":
             rel_path = Path(edit["path"])
+        else:
+            raise ValueError(f"Unsupported source_scope: {source_scope}")
         mode = edit["mode"]
         text = edit["text"]
         if rel_path.is_absolute():
@@ -127,13 +131,20 @@ def resolve_variant_codex_config(
     variant_config = variant.get("codex_config", {})
     if not isinstance(variant_config, dict):
         variant_config = {}
+    raw_codex_args = variant_config.get("codex_args", cli_args.get("codex_args", []))
+    if raw_codex_args is None:
+        codex_args: list[str] = []
+    elif not isinstance(raw_codex_args, list) or not all(
+        isinstance(arg, str) for arg in raw_codex_args
+    ):
+        raise ValueError("codex_config.codex_args must be a list of strings")
+    else:
+        codex_args = list(raw_codex_args)
     return {
         "model": variant_config.get("model", cli_args.get("model")),
         "sandbox": variant_config.get("sandbox", cli_args.get("sandbox")),
         "profile": variant_config.get("profile", cli_args.get("profile")),
-        "codex_args": list(
-            variant_config.get("codex_args", cli_args.get("codex_args", []))
-        ),
+        "codex_args": codex_args,
     }
 
 

@@ -139,3 +139,39 @@ def test_fetch_recent_interactive_cases_dedupes_by_thread_name(monkeypatch):
 
     assert len(result) == 1
     assert result[0]["prompt"] == "optimize AGENTS"
+
+
+def test_main_include_interactive_respects_limit(monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr(codex_casegen, "ensure_wandb_api_key", lambda: "x")
+    monkeypatch.setattr(
+        codex_casegen, "weave", SimpleNamespace(init=lambda *_args, **_kwargs: None)
+    )
+    monkeypatch.setattr(
+        codex_casegen,
+        "fetch_recent_codex_cases",
+        lambda **_kwargs: [
+            {"prompt": "p1", "must_contain": [], "must_not_contain": [], "max_chars": 1}
+        ],
+    )
+    monkeypatch.setattr(
+        codex_casegen,
+        "fetch_recent_interactive_cases",
+        lambda **_kwargs: [
+            {
+                "prompt": "p2",
+                "must_contain": [],
+                "must_not_contain": [],
+                "max_chars": 1,
+                "source": "interactive",
+            }
+        ],
+    )
+
+    output = tmp_path / "cases.jsonl"
+    rc = codex_casegen.main(
+        ["--limit", "1", "--include-interactive", "--output", str(output)]
+    )
+
+    assert rc == 0
+    rows = output.read_text(encoding="utf-8").splitlines()
+    assert len(rows) == 1
