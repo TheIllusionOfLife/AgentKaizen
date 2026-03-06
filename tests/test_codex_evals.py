@@ -2,6 +2,7 @@ import json
 import pathlib
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
@@ -58,6 +59,51 @@ def test_load_cases_jsonl_reads_directory_suites(tmp_path):
 
     assert [row["id"] for row in rows] == ["core-1", "workflow-1"]
     assert [row["suite"] for row in rows] == ["core", "workflow"]
+
+
+def test_builtin_valid_json_case_scorer_uses_builtin_validator():
+    scorer = codex_evals.BuiltinValidJSONCaseScorer()
+
+    skipped = scorer.score(output="ok", require_json=False, response_schema=None)
+    passed = scorer.score(output='{"a":1}', require_json=True, response_schema=None)
+
+    assert skipped["applicable"] is False
+    assert passed["pass"] is True
+    assert passed["json_valid"] is True
+
+
+def test_builtin_pydantic_case_scorer_validates_response_schema():
+    scorer = codex_evals.BuiltinPydanticCaseScorer()
+    schema = {
+        "type": "object",
+        "properties": {"answer": {"type": "string"}},
+        "required": ["answer"],
+    }
+
+    passed = scorer.score(output='{"answer":"ok"}', response_schema=schema)
+    failed = scorer.score(output='{"count":1}', response_schema=schema)
+
+    assert passed["pass"] is True
+    assert failed["pass"] is False
+
+
+def test_builtin_embedding_similarity_case_scorer_skips_without_reference():
+    scorer = codex_evals.BuiltinEmbeddingSimilarityCaseScorer()
+
+    skipped = codex_evals.asyncio.run(
+        scorer.score(output="ok", reference_output=None)
+    )
+
+    assert skipped["applicable"] is False
+
+
+def test_build_eval_scorers_includes_builtin_scorers():
+    scorers = codex_evals.build_eval_scorers()
+    names = {scorer.name for scorer in scorers if getattr(scorer, "name", None)}
+
+    assert "builtin_json_validity" in names
+    assert "builtin_pydantic" in names
+    assert "builtin_embedding_similarity" in names
 
 
 def test_load_cases_jsonl_rejects_missing_path(tmp_path):

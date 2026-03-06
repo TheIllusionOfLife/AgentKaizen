@@ -153,7 +153,10 @@ def test_build_prompt_content_preserves_text_and_images(tmp_path):
 
     assert content == [
         {"type": "input_text", "text": "Explain this image"},
-        {"type": "input_image", "image_path": str(image_path)},
+        {
+            "type": "input_image",
+            "image_path": codex_weave._sanitize_path(str(image_path)),
+        },
     ]
 
 
@@ -265,10 +268,36 @@ def test_main_traces_multimodal_prompt_content(
     assert out.out.strip() == "ok"
     assert fake_weave.calls[-1]["input_content"] == [
         {"type": "input_text", "text": "Explain this image"},
-        {"type": "input_image", "image_path": str(image_path)},
+        {
+            "type": "input_image",
+            "image_path": codex_weave._sanitize_path(str(image_path)),
+        },
     ]
     assert fake_weave.calls[-1]["modalities"] == ["text", "image"]
     assert fake_weave.calls[-1]["prompt"] == "Explain this image"
+
+
+def test_main_applies_builtin_pii_redaction_to_trace_payload(
+    monkeypatch, capsys, fake_weave, fake_subprocess_run
+):
+    monkeypatch.setenv("WANDB_API_KEY", "x")
+    set_wandb_target_env(monkeypatch)
+    fake_subprocess_run(final_message="Contact user@example.com", returncode=0)
+    monkeypatch.setattr(codex_weave, "configure_weave_pii_redaction", lambda: None)
+    monkeypatch.setattr(
+        codex_weave,
+        "apply_builtin_pii_redaction",
+        lambda value, enabled=True: {
+            **value,
+            "final_message": "[REDACTED]" if enabled else value["final_message"],
+        },
+    )
+
+    rc = codex_weave.main(["--prompt", "Say only: ok"])
+
+    out = capsys.readouterr()
+    assert rc == 0
+    assert out.out.strip() == "[REDACTED]"
 
 
 def test_main_guardrail_warn_does_not_fail_exit(

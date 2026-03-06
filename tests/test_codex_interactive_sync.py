@@ -414,6 +414,43 @@ def test_redaction_extra_patterns_do_not_reemit_capture_groups():
     assert redacted == "[REDACTED]"
 
 
+def test_build_interactive_trace_applies_builtin_pii_redaction(monkeypatch, tmp_path):
+    session_file = tmp_path / "rollout.jsonl"
+    session_file.write_text(
+        json.dumps(
+            {
+                "timestamp": "2026-03-06T00:00:01Z",
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": "email user@example.com",
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        codex_interactive_sync,
+        "apply_builtin_pii_redaction",
+        lambda value, enabled=True: {
+            **value,
+            "messages": [
+                {**value["messages"][0], "content": "[REDACTED]"}
+            ],
+        },
+    )
+
+    trace = codex_interactive_sync.build_interactive_trace(
+        session_file=session_file,
+        thread_name="demo",
+        redactor=codex_interactive_sync.build_redactor([]),
+    )
+
+    assert trace["messages"][0]["content"] == "[REDACTED]"
+
+
 def test_build_interactive_trace_sanitizes_path_fields(tmp_path):
     session_file = tmp_path / "rollout.jsonl"
     session_file.write_text(
