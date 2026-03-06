@@ -461,6 +461,81 @@ def _message_is_clarification(
     )
 
 
+def _message_is_user_correction(
+    user_message: dict[str, Any], previous_message: dict[str, Any] | None
+) -> bool:
+    if user_message.get("role") != "user" or not previous_message:
+        return False
+    if previous_message.get("role") != "assistant":
+        return False
+    content = _normalize_whitespace(_as_string(user_message.get("content"))).lower()
+    if not content:
+        return False
+    correction_prefixes = (
+        "actually",
+        "no,",
+        "not quite",
+        "you missed",
+        "i meant",
+        "instead",
+        "rather",
+    )
+    if content.startswith(correction_prefixes):
+        return True
+    correction_markers = (
+        "that's not",
+        "that is not",
+        "please don't",
+        "didn't",
+        "don't do",
+        "don't update",
+        "you should have",
+    )
+    return any(marker in content for marker in correction_markers)
+
+
+def _categorize_command(command: str) -> str:
+    lowered = command.lower()
+    tokens: list[str]
+    try:
+        tokens = shlex.split(lowered)
+    except ValueError:
+        tokens = lowered.split()
+    if "pytest" in lowered or "unittest" in lowered:
+        return "test"
+    if "ruff format" in lowered or "format" in tokens:
+        return "format"
+    if "ruff check" in lowered or "lint" in tokens:
+        return "lint"
+    if lowered.startswith("git ") or lowered == "git":
+        return "git"
+    if lowered.startswith("uv ") or lowered == "uv":
+        return "uv"
+    if any(token in tokens for token in ("rg", "grep", "find", "ls", "cat", "sed")):
+        return "inspect"
+    return "other"
+
+
+def _has_completion_language(message: dict[str, Any]) -> bool:
+    if message.get("role") != "assistant":
+        return False
+    content = _normalize_whitespace(_as_string(message.get("content"))).lower()
+    if not content:
+        return False
+    completion_markers = (
+        "done",
+        "completed",
+        "finished",
+        "implemented",
+        "updated",
+        "fixed",
+        "pushed",
+        "created the pr",
+        "opened the pr",
+    )
+    return any(marker in content for marker in completion_markers)
+
+
 def _build_interactive_analysis(
     *, messages: list[dict[str, Any]], tool_calls: list[dict[str, Any]], status: str
 ) -> dict[str, Any]:
@@ -485,11 +560,9 @@ def _build_interactive_analysis(
 
     user_correction_count = sum(
         1
-        for msg in user_messages[1:]
-        if _contains_any(
-            _as_string(msg.get("content")),
-            ["actually", "you missed", "not quite", "no,", "don't", "didn't"],
-        )
+        for index, msg in enumerate(messages)
+        if msg.get("role") == "user"
+        and _message_is_user_correction(msg, messages[index - 1] if index > 0 else None)
     )
     clarification_question_count = sum(
         1
@@ -511,6 +584,10 @@ def _build_interactive_analysis(
     ran_format = any(
         "ruff format" in cmd or "format" in _safe_split(cmd) for cmd in commands
     )
+    command_categories: dict[str, int] = {}
+    for cmd in commands:
+        category = _categorize_command(cmd)
+        command_categories[category] = command_categories.get(category, 0) + 1
     used_skills = any("SKILL.md" in _as_string(msg.get("content")) for msg in messages)
     error_count = sum(
         1
@@ -525,6 +602,12 @@ def _build_interactive_analysis(
             )
         )
     )
+    if status == "complete":
+        completion_signal_source = "task_complete_event"
+    elif assistant_messages and _has_completion_language(assistant_messages[-1]):
+        completion_signal_source = "assistant_response_only"
+    else:
+        completion_signal_source = "incomplete"
 
     return {
         "user_turn_count": len(user_messages),
@@ -533,12 +616,15 @@ def _build_interactive_analysis(
         "tool_call_count": len(invocation_calls),
         "web_search_count": 0,
         "error_count": error_count,
+        "tool_error_count": error_count,
         "task_completed": status == "complete",
+        "completion_signal_source": completion_signal_source,
         "branch_created": branch_created,
         "used_uv": used_uv,
         "ran_tests": ran_tests,
         "ran_lint": ran_lint,
         "ran_format": ran_format,
+        "command_categories": command_categories,
         "used_skills": used_skills,
         "clarification_question_count": clarification_question_count,
         "user_correction_count": user_correction_count,

@@ -60,6 +60,41 @@ def test_load_cases_jsonl_reads_directory_suites(tmp_path):
     assert [row["suite"] for row in rows] == ["core", "workflow"]
 
 
+def test_load_cases_jsonl_normalizes_optional_builtin_scorer_fields(tmp_path):
+    path = tmp_path / "cases.jsonl"
+    path.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "prompt": "p1",
+                        "response_schema": {"type": "object", "properties": {}},
+                        "must_contain": [],
+                        "must_not_contain": [],
+                        "max_chars": 10,
+                    }
+                ),
+                json.dumps(
+                    {
+                        "prompt": "p2",
+                        "must_contain": [],
+                        "must_not_contain": [],
+                        "max_chars": 20,
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    rows = codex_evals.load_cases_jsonl(path)
+
+    assert rows[0]["response_schema"] == {"type": "object", "properties": {}}
+    assert "response_schema" in rows[1]
+    assert rows[1]["response_schema"] is None
+
+
 def test_builtin_valid_json_case_scorer_uses_builtin_validator():
     scorer = codex_evals.BuiltinValidJSONCaseScorer()
 
@@ -90,21 +125,32 @@ def test_builtin_pydantic_case_scorer_validates_response_schema():
     assert failed["pass"] is False
 
 
-def test_builtin_embedding_similarity_case_scorer_skips_without_reference():
-    scorer = codex_evals.BuiltinEmbeddingSimilarityCaseScorer()
-
-    skipped = codex_evals.asyncio.run(scorer.score(output="ok", reference_output=None))
-
-    assert skipped["applicable"] is False
-
-
 def test_build_eval_scorers_includes_builtin_scorers():
-    scorers = codex_evals.build_eval_scorers()
+    scorers = codex_evals.build_eval_scorers(
+        [
+            {
+                "prompt": "p1",
+                "must_contain": [],
+                "must_not_contain": [],
+                "max_chars": 10,
+                "response_schema": {"type": "object", "properties": {}},
+            }
+        ]
+    )
     names = {scorer.name for scorer in scorers if getattr(scorer, "name", None)}
 
     assert "builtin_json_validity" in names
     assert "builtin_pydantic" in names
-    assert "builtin_embedding_similarity" in names
+
+
+def test_build_eval_scorers_skips_optional_builtin_scorers_without_columns():
+    scorers = codex_evals.build_eval_scorers(
+        [{"prompt": "p1", "must_contain": [], "must_not_contain": [], "max_chars": 10}]
+    )
+    names = {scorer.name for scorer in scorers if getattr(scorer, "name", None)}
+
+    assert "builtin_json_validity" not in names
+    assert "builtin_pydantic" not in names
 
 
 def test_load_cases_jsonl_rejects_missing_path(tmp_path):
@@ -693,6 +739,87 @@ def test_main_missing_wandb_api_key_writes_to_stderr(monkeypatch, capsys):
     assert rc == 2
     assert "WANDB_API_KEY" in out.err
     assert out.out == ""
+
+
+def test_main_succeeds_without_optional_builtin_scorer_columns(
+    monkeypatch, capsys, tmp_path
+):
+    monkeypatch.setattr(codex_evals, "ensure_wandb_api_key", lambda: "x")
+    set_wandb_target_env(monkeypatch)
+    monkeypatch.setattr(codex_evals.weave, "init", lambda _project: None)
+
+    cases_path = tmp_path / "cases.jsonl"
+    cases_path.write_text(
+        json.dumps(
+            {
+                "prompt": "Say only: ok",
+                "must_contain": ["ok"],
+                "must_not_contain": [],
+                "exact_match": "ok",
+                "max_chars": 40,
+                "require_json": False,
+                "required_sections": [],
+                "require_file_paths": False,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    variant_path = tmp_path / "variant.json"
+    variant_path.write_text(
+        json.dumps({"name": "candidate", "edits": []}), encoding="utf-8"
+    )
+
+    monkeypatch.setattr(codex_evals, "copy_workspace", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        codex_evals, "materialize_external_variant_inputs", lambda *_args, **_kwargs: {}
+    )
+    monkeypatch.setattr(
+        codex_evals, "apply_variant_edits", lambda *_args, **_kwargs: None
+    )
+
+    scorer_names: list[list[str]] = []
+
+    class FakeEvaluation:
+        def __init__(self, name, dataset, scorers):
+            del name, dataset
+            scorer_names.append(
+                [scorer.name for scorer in scorers if getattr(scorer, "name", None)]
+            )
+
+        def evaluate(self, model):
+            del model
+            return {
+                "score_contains_all": {"pass": {"true_fraction": 1.0}},
+                "score_forbidden_absent": {"pass": {"true_fraction": 1.0}},
+                "score_exact_match": {
+                    "pass": {"true_fraction": 1.0},
+                    "exact_match_required": {"true_fraction": 1.0, "count": 1},
+                },
+                "score_max_chars": {"pass": {"true_fraction": 1.0}},
+                "score_token_usage": {"total_tokens": {"mean": 10.0}},
+                "model_latency": {"mean": 1.0},
+            }
+
+    monkeypatch.setattr(codex_evals.weave, "Evaluation", FakeEvaluation)
+    monkeypatch.setattr(codex_evals.asyncio, "run", lambda result: result)
+
+    rc = codex_evals.main(
+        [
+            "--cases",
+            str(cases_path),
+            "--variant-file",
+            str(variant_path),
+        ]
+    )
+
+    out = capsys.readouterr()
+    assert rc == 0
+    assert scorer_names
+    for names in scorer_names:
+        assert "builtin_json_validity" not in names
+        assert "builtin_pydantic" not in names
+    assert "Ranking Summary:" in out.out
 
 
 def test_codex_variant_model_predict_timeout_raises_runtimeerror(monkeypatch):

@@ -80,6 +80,24 @@ def score_max_chars(
     }
 
 
+def score_min_chars(
+    output: str | dict[str, Any], min_chars: int | None
+) -> dict[str, Any]:
+    text = _extract_text(output)
+    length = len(text)
+    if min_chars is None:
+        return {
+            "pass": True,
+            "length": length,
+            "min_chars": None,
+        }
+    return {
+        "pass": length >= min_chars,
+        "length": length,
+        "min_chars": min_chars,
+    }
+
+
 def score_json_validity(
     output: str | dict[str, Any], require_json: bool = False
 ) -> dict[str, Any]:
@@ -113,20 +131,47 @@ def score_required_sections(
     }
 
 
+def score_required_content_groups(
+    output: str | dict[str, Any],
+    required_content_groups: list[list[str]] | None = None,
+) -> dict[str, Any]:
+    if not required_content_groups:
+        return {"pass": True, "missing_groups": [], "required_group_count": 0}
+    text = _extract_text(output)
+    missing_groups: list[list[str]] = []
+    for group in required_content_groups:
+        if not any(needle in text for needle in group):
+            missing_groups.append(group)
+    return {
+        "pass": len(missing_groups) == 0,
+        "missing_groups": missing_groups,
+        "missing_group_count": len(missing_groups),
+        "required_group_count": len(required_content_groups),
+    }
+
+
 def score_file_path_citations(
-    output: str | dict[str, Any], require_file_paths: bool = False
+    output: str | dict[str, Any],
+    require_file_paths: bool = False,
+    min_file_paths: int = 1,
 ) -> dict[str, Any]:
     if not require_file_paths:
-        return {"pass": True, "path_count": 0, "require_file_paths": False}
+        return {
+            "pass": True,
+            "path_count": 0,
+            "require_file_paths": False,
+            "min_file_paths": min_file_paths,
+        }
     text = _extract_text(output)
     matches = re.findall(
-        r"(?:^|[\s\[(])([A-Za-z0-9_.\-]+/[A-Za-z0-9_./\-]+\.[A-Za-z0-9_]+(?:#L\d+(?:C\d+)?)?)",
+        r"(?:^|[\s\[(])([A-Za-z0-9_.\-]+(?:/[A-Za-z0-9_./\-]+)?\.[A-Za-z0-9_]+(?:#L\d+(?:C\d+)?)?)",
         text,
     )
     return {
-        "pass": len(matches) > 0,
+        "pass": len(matches) >= max(1, min_file_paths),
         "path_count": len(matches),
         "require_file_paths": True,
+        "min_file_paths": max(1, min_file_paths),
     }
 
 
@@ -156,28 +201,39 @@ def evaluate_output(
     must_not_contain: list[str] | None = None,
     exact_match: str | None = None,
     max_chars: int | None = None,
+    min_chars: int | None = None,
     require_json: bool = False,
     required_sections: list[str] | None = None,
+    required_content_groups: list[list[str]] | None = None,
     require_file_paths: bool = False,
+    min_file_paths: int = 1,
 ) -> dict[str, Any]:
     contains_result = score_contains_all(output, must_contain or [])
     forbidden_result = score_forbidden_absent(output, must_not_contain or [])
     exact_match_result = score_exact_match(output, exact_match=exact_match)
     max_chars_result = score_max_chars(output, max_chars)
+    min_chars_result = score_min_chars(output, min_chars)
     json_result = score_json_validity(output, require_json=require_json)
     sections_result = score_required_sections(
         output, required_sections=required_sections
     )
+    content_groups_result = score_required_content_groups(
+        output, required_content_groups=required_content_groups
+    )
     file_path_result = score_file_path_citations(
-        output, require_file_paths=require_file_paths
+        output,
+        require_file_paths=require_file_paths,
+        min_file_paths=min_file_paths,
     )
     overall_pass = (
         contains_result["pass"]
         and forbidden_result["pass"]
         and exact_match_result["pass"]
         and max_chars_result["pass"]
+        and min_chars_result["pass"]
         and json_result["pass"]
         and sections_result["pass"]
+        and content_groups_result["pass"]
         and file_path_result["pass"]
     )
     return {
@@ -186,7 +242,9 @@ def evaluate_output(
         "score_forbidden_absent": forbidden_result,
         "score_exact_match": exact_match_result,
         "score_max_chars": max_chars_result,
+        "score_min_chars": min_chars_result,
         "score_json_validity": json_result,
         "score_required_sections": sections_result,
+        "score_required_content_groups": content_groups_result,
         "score_file_path_citations": file_path_result,
     }

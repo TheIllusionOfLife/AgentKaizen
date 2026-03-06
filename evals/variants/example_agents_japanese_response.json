@@ -1,0 +1,10 @@
+{
+  "name": "agents-japanese-response",
+  "edits": [
+    {
+      "path": "AGENTS.md",
+      "mode": "append",
+      "text": "\nYou must respond in Japanese.\n"
+    }
+  ]
+}

@@ -13,8 +13,9 @@ Important steering surfaces in this repo include:
 ## Required Environment
 Live Weave workflows require all of the following:
 - `WANDB_API_KEY`
-- `WANDB_ENTITY`
 - `WANDB_PROJECT`
+
+`WANDB_ENTITY` is also required, but it may come from `WANDB_ENTITY`, `.env.local`, or the logged-in W&B account if not passed explicitly.
 
 Do not hardcode personal W&B entity or project values in code, docs, examples, or tests.
 
@@ -75,11 +76,16 @@ When changing CLI behavior:
 
 ## Non-Obvious Behaviors
 - W&B entity and project must be passed explicitly or provided through `WANDB_ENTITY` and `WANDB_PROJECT`.
+- `.env.local` is a supported source for `WANDB_API_KEY`, `WANDB_ENTITY`, `WANDB_PROJECT`, and `WANDB_BASE_URL`.
 - `codex exec --json` returns JSONL event streams, not a single JSON object. Reuse `parse_codex_jsonl()` instead of inventing a new parser.
 - Interactive sync seeds the state file on the first run and uploads nothing on that initial pass. This prevents backfilling the entire local history unexpectedly.
 - Interactive trace redaction is enabled by default. Preserve that default unless there is a strong reason to change it.
 - Offline evals compare variants inside temporary workspaces. Do not mutate the real repo as part of evaluation logic.
+- `codex-eval` automatically adds `--skip-git-repo-check` to the Codex invocation unless it was already supplied.
 - Interactive scoring has two paths: a default structured local analysis path and an older external Codex-judge path. Prefer the default path unless you are intentionally changing the judge behavior.
+- Optional eval case fields must stay optional in the runner:
+  - `response_schema` activates Weave's built-in JSON/schema scorers
+  - datasets without those fields must still evaluate successfully
 
 ## Common Gotchas
 - Do not reintroduce personal or repo-owner-specific defaults for Weave targets.

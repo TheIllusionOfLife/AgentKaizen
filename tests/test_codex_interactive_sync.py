@@ -313,6 +313,119 @@ def test_build_interactive_trace_derives_user_task_and_compact_summary(tmp_path)
     assert "# AGENTS.md instructions" not in trace["analysis_summary"]
 
 
+def test_build_interactive_trace_marks_corrections_and_command_categories(tmp_path):
+    session_file = tmp_path / "rollout.jsonl"
+    session_file.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "timestamp": "2026-03-06T00:00:00Z",
+                        "type": "session_meta",
+                        "payload": {"id": "abc", "cwd": "/repo"},
+                    }
+                ),
+                json.dumps(
+                    {
+                        "timestamp": "2026-03-06T00:00:01Z",
+                        "type": "response_item",
+                        "payload": {
+                            "type": "message",
+                            "role": "assistant",
+                            "content": "I will explain the repo.",
+                        },
+                    }
+                ),
+                json.dumps(
+                    {
+                        "timestamp": "2026-03-06T00:00:02Z",
+                        "type": "response_item",
+                        "payload": {
+                            "type": "message",
+                            "role": "user",
+                            "content": "Actually, explain the architecture instead.",
+                        },
+                    }
+                ),
+                json.dumps(
+                    {
+                        "timestamp": "2026-03-06T00:00:03Z",
+                        "type": "response_item",
+                        "payload": {
+                            "type": "function_call",
+                            "name": "exec_command",
+                            "arguments": json.dumps({"cmd": "uv run pytest"}),
+                        },
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    trace = codex_interactive_sync.build_interactive_trace(
+        session_file=session_file,
+        thread_name="demo",
+        redactor=codex_interactive_sync.build_redactor([]),
+    )
+
+    assert trace["analysis"]["user_correction_count"] == 1
+    assert trace["analysis"]["command_categories"]["test"] == 1
+    assert trace["analysis"]["completion_signal_source"] == "incomplete"
+
+
+def test_build_interactive_trace_detects_clarification_turns_with_confirmation(
+    tmp_path,
+):
+    session_file = tmp_path / "rollout.jsonl"
+    session_file.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "timestamp": "2026-03-06T00:00:00Z",
+                        "type": "session_meta",
+                        "payload": {"id": "abc", "cwd": "/repo"},
+                    }
+                ),
+                json.dumps(
+                    {
+                        "timestamp": "2026-03-06T00:00:01Z",
+                        "type": "response_item",
+                        "payload": {
+                            "type": "message",
+                            "role": "assistant",
+                            "content": "Should I update README.md or AGENTS.md?",
+                        },
+                    }
+                ),
+                json.dumps(
+                    {
+                        "timestamp": "2026-03-06T00:00:02Z",
+                        "type": "response_item",
+                        "payload": {
+                            "type": "message",
+                            "role": "user",
+                            "content": "Use README.md.",
+                        },
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    trace = codex_interactive_sync.build_interactive_trace(
+        session_file=session_file,
+        thread_name="demo",
+        redactor=codex_interactive_sync.build_redactor([]),
+    )
+
+    assert trace["analysis"]["clarification_question_count"] == 1
+
+
 def test_build_interactive_trace_prefers_discovery_updated_at(tmp_path):
     session_file = tmp_path / "rollout.jsonl"
     session_file.write_text(

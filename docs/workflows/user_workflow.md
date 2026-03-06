@@ -1,6 +1,6 @@
 # User Workflow: Improving Codex Behavior with Weave
 
-This is a project-owned workflow guide for running the AgentKaizen loop. Before using the commands below, set `WANDB_API_KEY`, `WANDB_ENTITY`, and `WANDB_PROJECT` as described in the repository [README.md](../../README.md).
+This is a project-owned workflow guide for running the AgentKaizen loop. Before using the commands below, set `WANDB_API_KEY` and `WANDB_PROJECT`, plus `WANDB_ENTITY` if it is not already available in `.env.local` or through the logged-in W&B account, as described in the repository [README.md](../../README.md).
 
 ## Goal
 Use measurable experiments to improve Codex outputs by iterating on foundational documents and config surfaces (for example `AGENTS.md`, `README.md`, skills, and Codex profile/config choices).
@@ -17,9 +17,11 @@ Use measurable experiments to improve Codex outputs by iterating on foundational
 - Typical targets: `AGENTS.md`, `README.md`, external skill docs, and Codex config overrides.
 
 4. Build/refresh eval cases
-- Add real prompts to `evals/cases.jsonl`.
+- Add real prompts to `evals/cases/`.
 - Include checks: `must_contain`, `must_not_contain`, `max_chars`.
 - Add structure checks when needed: `require_json`, `required_sections`, `require_file_paths`.
+- Add optional semantic or schema targets only when needed:
+  - `response_schema` for JSON/schema validation
 
 4.5 Generate candidate cases from recent traces (optional bootstrap)
 ```bash
@@ -49,6 +51,14 @@ uv run codex-eval \
 ```
 - Compare baseline vs variants in Weave Evals.
 - Gate candidates when quality is similar but latency/tokens regress.
+- `codex-eval` runs variants in temp workspaces and automatically adds `--skip-git-repo-check` unless you already passed it.
+
+Language-steering example:
+```bash
+uv run codex-eval \
+  --cases evals/cases/language-steering.jsonl \
+  --variant-file evals/variants/example_agents_japanese_response.json
+```
 
 6. Review metrics and traces
 - Primary signal: scorer pass rate (`true_fraction`).

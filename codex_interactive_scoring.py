@@ -90,18 +90,79 @@ def score_interactive_heuristics(trace: dict[str, Any]) -> dict[str, Any]:
     workflow_compliance = sum(1.0 for item in workflow_signals if item) / max(
         1, len(workflow_signals)
     )
+    workflow_signal_breakdown: dict[str, bool | None] = {}
+    if task_context == "code_change":
+        workflow_signal_breakdown = {
+            "branch_created": bool(analysis.get("branch_created")),
+            "used_uv": bool(analysis.get("used_uv")),
+            "ran_tests": bool(analysis.get("ran_tests")),
+            "ran_lint": bool(analysis.get("ran_lint"))
+            if "ran_lint" in analysis
+            else None,
+            "ran_format": bool(analysis.get("ran_format"))
+            if "ran_format" in analysis
+            else None,
+        }
+    else:
+        workflow_signal_breakdown = {"context_bypass": True}
     tool_call_count = int(analysis.get("tool_call_count") or 0)
     clarification_count = int(analysis.get("clarification_question_count") or 0)
     user_correction_count = int(analysis.get("user_correction_count") or 0)
-    friction = min(1.0, 0.25 * clarification_count + 0.5 * user_correction_count)
+    error_count = int(analysis.get("error_count") or 0)
+    clarification_friction = min(1.0, 0.25 * clarification_count)
+    correction_friction = min(1.0, 0.5 * user_correction_count)
+    execution_friction = min(1.0, 0.25 * error_count)
+    raw_friction = clarification_friction + correction_friction + execution_friction
+    friction = min(1.0, raw_friction)
+    if raw_friction > friction and raw_friction > 0.0:
+        scale = friction / raw_friction
+        clarification_friction *= scale
+        correction_friction *= scale
+        execution_friction *= scale
+    friction_breakdown = {
+        "clarification": round(clarification_friction, 3),
+        "correction": round(correction_friction, 3),
+        "execution": round(execution_friction, 3),
+    }
     tool_penalty = min(0.75, 0.1 * math.log1p(max(0, tool_call_count - 2)))
+    friction_penalty = friction / 2
     efficiency = max(0.0, 1.0 - tool_penalty - friction / 2)
+    completion_factor = 1.0 if analysis.get("task_completed") else 0.0
+    assistant_response_factor = (
+        1.0
+        if (completion_factor or int(analysis.get("assistant_turn_count") or 0) > 0)
+        else 0.0
+    )
+    execution_factor = max(0.0, 1.0 - 0.35 * error_count)
+    correction_factor = max(0.0, 1.0 - 0.5 * user_correction_count)
+    task_success_estimate = min(
+        1.0,
+        0.55 * completion_factor
+        + 0.15 * assistant_response_factor
+        + 0.2 * execution_factor
+        + 0.1 * correction_factor,
+    )
+    task_success_factors = {
+        "completion": round(completion_factor, 3),
+        "assistant_response": round(assistant_response_factor, 3),
+        "execution_health": round(execution_factor, 3),
+        "correction_health": round(correction_factor, 3),
+    }
+    efficiency_breakdown = {
+        "tool_count_penalty": round(tool_penalty, 3),
+        "friction_penalty": round(friction_penalty, 3),
+    }
     return {
         "task_completed": bool(analysis.get("task_completed")),
+        "task_success_estimate": round(task_success_estimate, 3),
+        "task_success_factors": task_success_factors,
         "task_context": task_context,
         "workflow_compliance": round(workflow_compliance, 3),
         "user_friction": round(friction, 3),
         "efficiency": round(efficiency, 3),
+        "friction_breakdown": friction_breakdown,
+        "workflow_signal_breakdown": workflow_signal_breakdown,
+        "efficiency_breakdown": efficiency_breakdown,
     }
 
 
@@ -144,6 +205,13 @@ def format_score_summary(result: dict[str, Any]) -> str:
             f"workflow={heuristics.get('workflow_compliance', 0.0):.3f}, "
             f"friction={heuristics.get('user_friction', 0.0):.3f}, "
             f"efficiency={heuristics.get('efficiency', 0.0):.3f}"
+        )
+    if result.get("friction_breakdown") or result.get("workflow_signal_breakdown"):
+        lines.append(
+            "Breakdowns: "
+            f"friction={result.get('friction_breakdown', {})}; "
+            f"workflow={result.get('workflow_signal_breakdown', {})}; "
+            f"efficiency={result.get('efficiency_breakdown', {})}"
         )
     return "\n".join(lines)
 
@@ -223,6 +291,12 @@ def merge_interactive_scores(
         "workflow_failures": list(judge_scores.get("workflow_failures", [])),
         "recommended_changes": list(judge_scores.get("recommended_changes", [])),
         "heuristics": heuristic_scores,
+        "task_success_factors": dict(judge_scores.get("task_success_factors", {})),
+        "friction_breakdown": dict(judge_scores.get("friction_breakdown", {})),
+        "workflow_signal_breakdown": dict(
+            judge_scores.get("workflow_signal_breakdown", {})
+        ),
+        "efficiency_breakdown": dict(judge_scores.get("efficiency_breakdown", {})),
     }
 
 
@@ -353,7 +427,7 @@ def run_subagent_analysis(trace_payload: dict[str, Any]) -> dict[str, Any]:
         reasoning_parts.append(f"Primary improvement surface: {relevance}.")
 
     return {
-        "task_success": 1.0 if heuristics.get("task_completed") else 0.0,
+        "task_success": heuristics.get("task_success_estimate", 0.0),
         "user_friction": heuristics.get("user_friction", 0.0),
         "workflow_compliance": heuristics.get("workflow_compliance", 0.0),
         "efficiency": heuristics.get("efficiency", 0.0),
@@ -369,6 +443,12 @@ def run_subagent_analysis(trace_payload: dict[str, Any]) -> dict[str, Any]:
         "suspicious_signals": suspicious_signals,
         "workflow_failures": workflow_failures,
         "recommended_changes": recommended_changes,
+        "task_success_factors": dict(heuristics.get("task_success_factors", {})),
+        "friction_breakdown": dict(heuristics.get("friction_breakdown", {})),
+        "workflow_signal_breakdown": dict(
+            heuristics.get("workflow_signal_breakdown", {})
+        ),
+        "efficiency_breakdown": dict(heuristics.get("efficiency_breakdown", {})),
     }
 
 
@@ -518,6 +598,7 @@ def score_interactive_trace_payload(
         )
     if scoring_backend != "external":
         raise ValueError(f"Unsupported scoring backend: {scoring_backend}")
+    structured_local = run_subagent_analysis(trace_payload)
     try:
         judge_scores = run_codex_judge(
             trace_payload,
@@ -527,34 +608,65 @@ def score_interactive_trace_payload(
         judge_scores["scorer_backend"] = "external"
         judge_scores["derived_user_task"] = derived_user_task
         judge_scores["task_context"] = str(heuristics.get("task_context", "unknown"))
-        judge_scores.setdefault("friction_signals", [])
-        judge_scores.setdefault("suspicious_signals", [])
-        judge_scores.setdefault("workflow_failures", [])
-        judge_scores.setdefault("recommended_changes", [])
+        judge_scores.setdefault(
+            "friction_signals", list(structured_local.get("friction_signals", []))
+        )
+        judge_scores.setdefault(
+            "suspicious_signals", list(structured_local.get("suspicious_signals", []))
+        )
+        judge_scores.setdefault(
+            "workflow_failures", list(structured_local.get("workflow_failures", []))
+        )
+        judge_scores.setdefault(
+            "recommended_changes",
+            list(structured_local.get("recommended_changes", [])),
+        )
+        judge_scores.setdefault(
+            "task_success_factors",
+            dict(structured_local.get("task_success_factors", {})),
+        )
+        judge_scores.setdefault(
+            "friction_breakdown", dict(structured_local.get("friction_breakdown", {}))
+        )
+        judge_scores.setdefault(
+            "workflow_signal_breakdown",
+            dict(structured_local.get("workflow_signal_breakdown", {})),
+        )
+        judge_scores.setdefault(
+            "efficiency_breakdown",
+            dict(structured_local.get("efficiency_breakdown", {})),
+        )
     except (JudgeResponseError, ValueError) as exc:
-        structured_fallback = run_subagent_analysis(trace_payload)
         judge_scores = {
-            "task_success": 1.0 if heuristics.get("task_completed") else 0.0,
+            "task_success": heuristics.get("task_success_estimate", 0.0),
             "user_friction": heuristics.get("user_friction", 0.0),
             "workflow_compliance": heuristics.get("workflow_compliance", 0.0),
             "efficiency": heuristics.get("efficiency", 0.0),
-            "optimization_relevance": structured_fallback.get(
+            "optimization_relevance": structured_local.get(
                 "optimization_relevance", "none"
             ),
-            "reasoning": str(structured_fallback.get("reasoning", "")),
+            "reasoning": str(structured_local.get("reasoning", "")),
             "judge_status": "fallback",
             "judge_error": str(exc),
             "raw_judge_output": getattr(exc, "raw_output", ""),
             "scorer_backend": "external",
             "derived_user_task": derived_user_task,
             "task_context": str(heuristics.get("task_context", "unknown")),
-            "friction_signals": list(structured_fallback.get("friction_signals", [])),
-            "suspicious_signals": list(
-                structured_fallback.get("suspicious_signals", [])
-            ),
-            "workflow_failures": list(structured_fallback.get("workflow_failures", [])),
+            "friction_signals": list(structured_local.get("friction_signals", [])),
+            "suspicious_signals": list(structured_local.get("suspicious_signals", [])),
+            "workflow_failures": list(structured_local.get("workflow_failures", [])),
             "recommended_changes": list(
-                structured_fallback.get("recommended_changes", [])
+                structured_local.get("recommended_changes", [])
+            ),
+            "task_success_factors": dict(
+                structured_local.get("task_success_factors", {})
+            ),
+            "friction_breakdown": dict(structured_local.get("friction_breakdown", {})),
+            "workflow_signal_breakdown": dict(
+                structured_local.get("workflow_signal_breakdown", {})
+            ),
+            "efficiency_breakdown": dict(
+                structured_local.get("efficiency_breakdown", {})
             ),
         }
     return merge_interactive_scores(

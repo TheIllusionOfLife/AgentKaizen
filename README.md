@@ -57,7 +57,7 @@ export WANDB_ENTITY=your-team-or-username
 export WANDB_PROJECT=your-weave-project
 ```
 
-All commands in this repo require a W&B entity and project. If you do not want to set environment variables, pass `--entity` and `--project` explicitly on each command.
+All commands in this repo require a W&B project. The entity can come from `--entity`, `WANDB_ENTITY`, `.env.local`, or your logged-in W&B account. If you do not want to set environment variables, pass `--entity` and `--project` explicitly on each command.
 
 Useful optional Weave environment variables:
 - `WANDB_BASE_URL`: use a custom or self-hosted W&B base URL
@@ -135,6 +135,16 @@ uv run codex-eval \
   --token-regression-threshold 0.20
 ```
 
+Run the Japanese-response `AGENTS.md` experiment:
+
+```bash
+uv run codex-eval \
+  --cases evals/cases/language-steering.jsonl \
+  --variant-file evals/variants/example_agents_japanese_response.json
+```
+
+`codex-eval` runs each variant inside a temporary workspace and, unless you already passed it, automatically adds `--skip-git-repo-check` to the Codex invocation.
+
 ## How AgentKaizen Uses Weave
 The important mapping is:
 
@@ -160,6 +170,12 @@ This project uses Weave tracing in two distinct modes:
 
 The one-shot mode stores structured prompt content, command, event stream, final message, usage, and guardrail results. The interactive mode reconstructs an entire session from local Codex session files and stores structured message content, tool calls, usage, derived task text, and workflow analysis.
 
+The important difference is what each mode answers:
+- one-shot and offline eval flows answer: "did variant B beat baseline A on this prompt set?"
+- interactive scoring answers: "what happened in this real session, how well did it go, and which optimization surface should we adjust next?"
+
+In other words, one-shot/offline eval is for controlled comparison across variants, while interactive ingestion and scoring is for diagnosing a single real session and turning it into the next hypothesis to test.
+
 #### 2. Prompts, datasets, scorers, and models
 Prompts in this repo come from:
 - direct `codex-weave` prompts
@@ -172,13 +188,18 @@ Datasets in this repo are the eval case suite files under `evals/cases/`, plus d
 Scorers in this repo are shared functions and Weave built-ins that check:
 - required text
 - forbidden text
+- minimum output length
 - output length
 - JSON validity
 - schema conformance
 - required sections
+- required content groups
 - file path citations
-- semantic similarity when a reference answer is present
 - token usage
+
+Built-in scorers are enabled only when the eval dataset contains the fields they need:
+- `response_schema` activates built-in JSON/schema validation
+- datasets without those optional fields still run with the deterministic scorers
 
 Models in this repo are application-level Weave models, not provider SDK wrappers. `codex-eval` uses `CodexVariantModel(weave.Model)` to represent a candidate Codex behavior running inside a temporary workspace with specific config and document variants.
 
@@ -201,6 +222,11 @@ This repo uses hybrid redaction for traced content: custom sanitization for repo
 - suppression of large instruction boilerplate when deriving the user task
 
 Weave's built-in redaction is enabled for one-shot and interactive trace uploads, but it complements rather than replaces the project-specific sanitization above.
+
+## Troubleshooting
+- If a command says `WANDB_PROJECT` is missing, add it to your shell or `.env.local`.
+- If a command says `WANDB_API_KEY` is missing or invalid, refresh the key in `.env.local` or your shell session.
+- If an eval is meant to validate structured JSON output, make sure the relevant case rows include `response_schema`.
 
 ## Architecture
 The core flow is:
