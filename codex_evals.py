@@ -5,6 +5,7 @@ import asyncio
 import json
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -228,8 +229,83 @@ def _extract_mean(
 
 
 def _quality_score(summary: dict[str, Any], quality_keys: list[str]) -> float:
-    values = [_extract_true_fraction(summary, key) for key in quality_keys]
-    return sum(values) / len(values)
+    def _count_from_stats(stats: Any) -> float | None:
+        if not isinstance(stats, dict):
+            return None
+        count = stats.get("count")
+        if isinstance(count, (int, float)):
+            return float(count)
+        true_count = stats.get("true_count")
+        false_count = stats.get("false_count")
+        if isinstance(true_count, (int, float)) and isinstance(
+            false_count, (int, float)
+        ):
+            return float(true_count + false_count)
+        return None
+
+    def _total_rows() -> float:
+        for key in quality_keys:
+            scorer_summary = summary.get(key, {})
+            if not isinstance(scorer_summary, dict):
+                continue
+            pass_count = _count_from_stats(scorer_summary.get("pass", {}))
+            if pass_count is not None and pass_count > 0:
+                return pass_count
+        return 1.0
+
+    def _applicable_count(key: str, row_count: float) -> float:
+        scorer_summary = summary.get(key, {})
+        if not isinstance(scorer_summary, dict):
+            return row_count
+
+        applicable = scorer_summary.get("applicable_count")
+        if isinstance(applicable, (int, float)):
+            return float(applicable)
+
+        if key == "score_json_validity":
+            require_summary = scorer_summary.get("require_json", {})
+            require_fraction = float(
+                require_summary.get("true_fraction", 0.0)
+                if isinstance(require_summary, dict)
+                else 0.0
+            )
+            require_count = _count_from_stats(require_summary) or row_count
+            return require_fraction * require_count
+
+        if key == "score_file_path_citations":
+            require_summary = scorer_summary.get("require_file_paths", {})
+            require_fraction = float(
+                require_summary.get("true_fraction", 0.0)
+                if isinstance(require_summary, dict)
+                else 0.0
+            )
+            require_count = _count_from_stats(require_summary) or row_count
+            return require_fraction * require_count
+
+        if key == "score_required_sections":
+            required_summary = scorer_summary.get("required_count", {})
+            required_count = _count_from_stats(required_summary)
+            if required_count is not None:
+                return required_count
+
+        pass_count = _count_from_stats(scorer_summary.get("pass", {}))
+        return pass_count if pass_count is not None else row_count
+
+    row_count = _total_rows()
+    weighted_passes = 0.0
+    total_applicable = 0.0
+
+    for key in quality_keys:
+        applicable_count = _applicable_count(key, row_count)
+        if applicable_count <= 0:
+            continue
+        pass_fraction = _extract_true_fraction(summary, key)
+        weighted_passes += pass_fraction * applicable_count
+        total_applicable += applicable_count
+
+    if total_applicable == 0:
+        return 0.0
+    return weighted_passes / total_applicable
 
 
 def _active_quality_keys(summary: dict[str, Any]) -> list[str]:
@@ -362,7 +438,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if not ensure_wandb_api_key():
-        print("WANDB_API_KEY is required to run evals.")
+        print("WANDB_API_KEY is required to run evals.", file=sys.stderr)
         return 2
 
     project_path = f"{args.entity}/{args.project}"

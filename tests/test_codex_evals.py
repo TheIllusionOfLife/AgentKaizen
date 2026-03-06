@@ -371,6 +371,37 @@ def test_main_returns_4_when_candidate_fails_gate(monkeypatch):
     assert rc == 4
 
 
+def test_quality_score_uses_applicable_counts_for_mixed_activation():
+    summary = {
+        "score_contains_all": {"pass": {"true_fraction": 1.0, "count": 10}},
+        "score_forbidden_absent": {"pass": {"true_fraction": 1.0, "count": 10}},
+        "score_max_chars": {"pass": {"true_fraction": 1.0, "count": 10}},
+        "score_json_validity": {
+            "pass": {"true_fraction": 0.8, "count": 10},
+            "applicable_count": 2,
+        },
+    }
+    quality = codex_evals._quality_score(
+        summary,
+        [
+            "score_contains_all",
+            "score_forbidden_absent",
+            "score_max_chars",
+            "score_json_validity",
+        ],
+    )
+    assert quality == (10 + 10 + 10 + (0.8 * 2)) / (10 + 10 + 10 + 2)
+
+
+def test_main_missing_wandb_api_key_writes_to_stderr(monkeypatch, capsys):
+    monkeypatch.setattr(codex_evals, "ensure_wandb_api_key", lambda: None)
+    rc = codex_evals.main([])
+    out = capsys.readouterr()
+    assert rc == 2
+    assert "WANDB_API_KEY" in out.err
+    assert out.out == ""
+
+
 def test_codex_variant_model_predict_timeout_raises_runtimeerror(monkeypatch):
     model = codex_evals.CodexVariantModel(workspace="/tmp", timeout_seconds=1)
 

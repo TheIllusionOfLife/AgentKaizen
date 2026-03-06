@@ -5,6 +5,7 @@ import json
 import logging
 import re
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -95,10 +96,21 @@ def fetch_recent_codex_cases(
         try:
             output = dict(output_obj) if output_obj is not None else {}
         except (TypeError, ValueError):
+            metadata: dict[str, Any] = {
+                "output_type": type(output_obj).__name__,
+            }
+            if isinstance(output_obj, Mapping):
+                metadata["key_count"] = len(output_obj)
+                metadata["keys"] = sorted(str(key) for key in output_obj.keys())
+            elif hasattr(output_obj, "__len__"):
+                try:
+                    metadata["size"] = len(output_obj)  # type: ignore[arg-type]
+                except TypeError:
+                    pass
             logger.warning(
-                "Skipping call with non-dict output payload: op_name=%s output=%r",
+                "Skipping call with non-dict output payload: op_name=%s metadata=%s",
                 op_name,
-                output_obj,
+                metadata,
             )
             continue
 
