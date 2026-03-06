@@ -9,7 +9,7 @@ from typing import Any
 
 import weave
 
-from codex_weave import ensure_wandb_api_key, resolve_weave_project
+from agentkaizen.core import ensure_wandb_api_key, resolve_weave_project
 
 ALLOWED_RELEVANCE = {"agents", "readme", "skill", "config", "none"}
 ALLOWED_SCORING_BACKENDS = {"subagent", "external"}

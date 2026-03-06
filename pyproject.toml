@@ -8,6 +8,7 @@ dependencies = [
 ]
 
 [project.scripts]
+agentkaizen = "agentkaizen.cli:main"
 codex-weave = "codex_weave:main"
 codex-eval = "codex_evals:main"
 codex-casegen = "codex_casegen:main"
@@ -20,6 +21,9 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
 py-modules = ["codex_weave", "codex_evals", "codex_scoring", "codex_casegen", "codex_interactive_sync", "codex_interactive_scoring"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [dependency-groups]
 dev = [

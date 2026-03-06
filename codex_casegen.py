@@ -12,7 +12,7 @@ from typing import Any
 import weave
 from weave.trace.context import weave_client_context
 
-from codex_weave import ensure_wandb_api_key, resolve_weave_project
+from agentkaizen.core import ensure_wandb_api_key, resolve_weave_project
 
 logger = logging.getLogger(__name__)
 

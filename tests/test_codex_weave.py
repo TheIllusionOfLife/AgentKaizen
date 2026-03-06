@@ -37,7 +37,7 @@ def fake_weave(monkeypatch):
         def init(self, _project):
             return None
 
-        def op(self):
+        def op(self, **_kwargs):
             def deco(fn):
                 def wrapped(*args, **kwargs):
                     result = fn(*args, **kwargs)

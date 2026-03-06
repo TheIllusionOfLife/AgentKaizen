@@ -1,3 +1,5 @@
+"""Sync interactive Codex sessions to W&B Weave traces."""
+
 from __future__ import annotations
 
 import argparse
@@ -13,7 +15,7 @@ from typing import Any, Callable
 
 import weave
 
-from codex_weave import (
+from agentkaizen.core import (
     _sanitize_path,
     apply_builtin_pii_redaction,
     configure_weave_pii_redaction,
