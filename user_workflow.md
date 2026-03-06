@@ -33,7 +33,8 @@ uv run codex-casegen \
 uv run codex-weave-sync-interactive --once
 uv run codex-score-interactive --trace-file path/to/interactive-trace.json
 ```
-- Use interactive traces to find repeated user corrections, workflow violations, and likely optimization surfaces.
+- Use interactive traces to find repeated user corrections, workflow violations, likely optimization surfaces, and concrete recommended changes.
+- The default scorer uses a fast structured subagent-style analysis path; add `--scoring-backend external` when you want the slower `codex exec` audit flow.
 
 5. Run offline comparison
 ```bash
