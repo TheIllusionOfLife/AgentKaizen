@@ -113,3 +113,59 @@ def test_score_token_usage_handles_invalid_values():
 def test_exact_match_scorer_requires_full_match():
     assert codex_scoring.score_exact_match("ok", exact_match="ok")["pass"] is True
     assert codex_scoring.score_exact_match("ok then", exact_match="ok")["pass"] is False
+
+
+def test_min_chars_scorer_enforces_minimum_output_length():
+    passed = codex_scoring.score_min_chars("hello world", min_chars=5)
+    failed = codex_scoring.score_min_chars("hey", min_chars=5)
+
+    assert passed["pass"] is True
+    assert failed["pass"] is False
+    assert failed["min_chars"] == 5
+
+
+def test_required_content_groups_requires_one_match_per_group():
+    output = "Uses W&B Weave and uv for workflows."
+
+    passed = codex_scoring.score_required_content_groups(
+        output,
+        required_content_groups=[["W&B", "Weights & Biases"], ["uv", "pip"]],
+    )
+    failed = codex_scoring.score_required_content_groups(
+        output,
+        required_content_groups=[["W&B", "Weights & Biases"], ["pytest", "unittest"]],
+    )
+
+    assert passed["pass"] is True
+    assert failed["pass"] is False
+    assert failed["missing_group_count"] == 1
+
+
+def test_file_path_citations_can_require_multiple_paths():
+    output = {"text": "See src/app.py#L12 and tests/test_app.py#L8", "usage": {}}
+
+    passed = codex_scoring.score_file_path_citations(
+        output, require_file_paths=True, min_file_paths=2
+    )
+    failed = codex_scoring.score_file_path_citations(
+        output, require_file_paths=True, min_file_paths=3
+    )
+
+    assert passed["pass"] is True
+    assert failed["pass"] is False
+    assert failed["path_count"] == 2
+
+
+def test_evaluate_output_includes_new_local_scorers():
+    result = codex_scoring.evaluate_output(
+        output="Uses W&B Weave in docs. See src/app.py#L10",
+        must_contain=["W&B"],
+        min_chars=10,
+        required_content_groups=[["W&B", "Weights & Biases"], ["docs", "README"]],
+        require_file_paths=True,
+        min_file_paths=1,
+    )
+
+    assert result["pass"] is True
+    assert result["score_min_chars"]["pass"] is True
+    assert result["score_required_content_groups"]["pass"] is True

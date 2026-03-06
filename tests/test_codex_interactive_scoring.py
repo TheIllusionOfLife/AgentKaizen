@@ -53,6 +53,31 @@ def test_score_interactive_heuristics_keeps_large_successful_sessions_above_zero
     assert result["efficiency"] > 0.0
 
 
+def test_score_interactive_heuristics_includes_breakdowns_and_partial_success():
+    trace = {
+        "session_id": "s1",
+        "thread_name": "demo",
+        "analysis": {
+            "task_completed": False,
+            "assistant_turn_count": 2,
+            "error_count": 0,
+            "branch_created": False,
+            "used_uv": False,
+            "ran_tests": False,
+            "tool_call_count": 4,
+            "user_correction_count": 0,
+            "clarification_question_count": 1,
+        },
+    }
+
+    result = codex_interactive_scoring.score_interactive_heuristics(trace)
+
+    assert 0.0 < result["task_success_estimate"] < 0.5
+    assert result["task_success_factors"]["assistant_response"] == 1.0
+    assert result["friction_breakdown"]["clarification"] == 0.25
+    assert "tool_count_penalty" in result["efficiency_breakdown"]
+
+
 def test_parse_judge_response_requires_json_object():
     payload = codex_interactive_scoring.parse_judge_response(
         json.dumps(
@@ -199,6 +224,9 @@ def test_run_subagent_analysis_returns_structured_recommendations():
     assert "missing_lint" in result["workflow_failures"]
     assert "missing_format" in result["workflow_failures"]
     assert result["recommended_changes"]
+    assert "friction_breakdown" in result
+    assert "workflow_signal_breakdown" in result
+    assert "efficiency_breakdown" in result
 
 
 def test_run_subagent_analysis_treats_high_tool_count_as_suspicious_not_failure():
@@ -548,12 +576,15 @@ def test_format_score_summary_emphasizes_actionable_feedback():
                 "user_friction": 0.25,
                 "efficiency": 0.7,
             },
+            "friction_breakdown": {"clarification": 0.25, "correction": 0.0},
+            "workflow_signal_breakdown": {"branch_created": True, "used_uv": True},
         }
     )
 
     assert "Task: demo task" in summary
     assert "Workflow gaps: none" in summary
     assert "Recommendations: Clarify README.md demo workflow." in summary
+    assert "Breakdowns:" in summary
 
 
 def test_format_score_summary_handles_non_numeric_task_success():
