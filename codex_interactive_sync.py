@@ -13,7 +13,7 @@ from typing import Any, Callable
 
 import weave
 
-from codex_weave import DEFAULT_ENTITY, DEFAULT_PROJECT, ensure_wandb_api_key
+from codex_weave import ensure_wandb_api_key, resolve_weave_project
 
 logger = logging.getLogger(__name__)
 
@@ -734,8 +734,8 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Sync interactive Codex sessions to W&B Weave traces"
     )
-    parser.add_argument("--entity", default=DEFAULT_ENTITY, help="W&B entity/team")
-    parser.add_argument("--project", default=DEFAULT_PROJECT, help="W&B project")
+    parser.add_argument("--entity", help="W&B entity/team")
+    parser.add_argument("--project", help="W&B project")
     parser.add_argument(
         "--once", action="store_true", help="Run one sync pass and exit"
     )
@@ -878,8 +878,13 @@ def main(argv: list[str] | None = None) -> int:
     if not ensure_wandb_api_key():
         print("WANDB_API_KEY is required to sync interactive traces.", file=sys.stderr)
         return 2
+    try:
+        project_path = resolve_weave_project(args.entity, args.project)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
 
-    weave.init(f"{args.entity}/{args.project}")
+    weave.init(project_path)
 
     session_root = pathlib.Path(args.session_root).expanduser().resolve()
     index_file = pathlib.Path(args.index_file).expanduser().resolve()

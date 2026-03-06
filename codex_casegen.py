@@ -12,7 +12,7 @@ from typing import Any
 import weave
 from weave.trace.context import weave_client_context
 
-from codex_weave import DEFAULT_ENTITY, DEFAULT_PROJECT, ensure_wandb_api_key
+from codex_weave import ensure_wandb_api_key, resolve_weave_project
 
 logger = logging.getLogger(__name__)
 
@@ -200,8 +200,8 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Generate eval cases from recent Weave codex traces"
     )
-    parser.add_argument("--entity", default=DEFAULT_ENTITY, help="W&B entity/team")
-    parser.add_argument("--project", default=DEFAULT_PROJECT, help="W&B project")
+    parser.add_argument("--entity", help="W&B entity/team")
+    parser.add_argument("--project", help="W&B project")
     parser.add_argument("--limit", type=int, default=20, help="Max cases to generate")
     parser.add_argument(
         "--output",
@@ -250,8 +250,13 @@ def main(argv: list[str] | None = None) -> int:
     if not ensure_wandb_api_key():
         print("WANDB_API_KEY is required to generate cases.", file=sys.stderr)
         return 2
+    try:
+        project_path = resolve_weave_project(args.entity, args.project)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
 
-    weave.init(f"{args.entity}/{args.project}")
+    weave.init(project_path)
 
     new_cases = fetch_recent_codex_cases(
         limit=args.limit,

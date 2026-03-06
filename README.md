@@ -1,159 +1,123 @@
 # AgentKaizen
 
-Track and improve Codex CLI behavior with W&B Weave.
+Measure and improve how CLI-based AI coding agents behave, using W&B Weave.
 
-This repository provides:
-- `codex-weave`: run `codex exec` with trace logging and optional online guardrails.
-- `codex-eval`: run offline Weave Evals to compare baseline vs document variants (for example `AGENTS.md` changes).
-- `codex-weave-sync-interactive`: ingest interactive Codex TUI session files into Weave traces.
-- `codex-score-interactive`: score interactive session traces with heuristics plus a Codex CLI judge.
+## Why This Project Exists
+Users of tools like Codex can steer agent behavior through many different surfaces:
+- global `AGENTS.md`
+- project `AGENTS.md`
+- agent skills
+- `README.md`
+- Codex config and profiles
+- other repo-specific documents
 
-## Requirements
+Those surfaces matter, but it is usually hard to tell which change actually helped. This project exists to connect those steering inputs to measurable outcomes with W&B Weave.
+
+In practice, AgentKaizen helps you:
+- trace Codex CLI runs
+- score outputs with lightweight guardrails
+- ingest and analyze interactive Codex sessions
+- compare instruction and document variants with offline evals
+- turn real traces into reusable regression cases
+
+## What Is W&B Weave?
+W&B Weave is an observability and evaluation toolkit for AI applications. It is especially useful when you need to trace model behavior, inspect failures, and compare candidate improvements systematically instead of relying on intuition.
+
+This project uses Weave mainly for:
+- traces: logging Codex runs and interactive sessions
+- evals: comparing baseline behavior against candidate document or config changes
+- scorers: grading output quality, structure, and token usage
+- model evaluation workflows: running the same case set against multiple variants
+
+If you are new to Weave, start here:
+- Main site: https://wandb.ai/site/weave/
+- Documentation: https://docs.wandb.ai/weave
+
+## Quick Start
+### Requirements
 - Python 3.12+
 - `uv`
 - Codex CLI (`codex`)
-- W&B API key (`WANDB_API_KEY`)
+- A W&B account and API key
 
-## Setup
+### Environment Variables
+Set the required W&B variables in your shell profile or in `.env.local`:
+
+```bash
+WANDB_API_KEY=your_key_here
+WANDB_ENTITY=your-team-or-username
+WANDB_PROJECT=your-weave-project
+```
+
+For a shell session, you can export them like this:
+
+```bash
+export WANDB_API_KEY=your_key_here
+export WANDB_ENTITY=your-team-or-username
+export WANDB_PROJECT=your-weave-project
+```
+
+All commands in this repo require a W&B entity and project. If you do not want to set environment variables, pass `--entity` and `--project` explicitly on each command.
+
+Useful optional Weave environment variables:
+- `WANDB_BASE_URL`: use a custom or self-hosted W&B base URL
+- `WEAVE_PARALLELISM`: tune eval concurrency for larger `codex-eval` runs
+- `WEAVE_PRINT_CALL_LINK=false`: suppress noisy call-link output in scripted or CI environments
+- `WEAVE_LOG_LEVEL`: increase logging when debugging Weave integration issues
+- `WEAVE_DISABLED=true`: disable Weave tracing entirely for local dry runs or troubleshooting
+
+### Install
 ```bash
 uv venv .venv
 uv sync --group dev
 ```
 
-The `WANDB_API_KEY` can be provided via the shell environment or a `.env.local` file:
-```bash
-WANDB_API_KEY=your_key_here
-```
-
-Default Weave target:
-- Entity: `mukaiyuya-mukai-entertainment`
-- Project: `AgentKaizen`
-
-## Trace Codex Runs
+## Main Workflows
+### Trace a `codex exec` run
 ```bash
 uv run codex-weave --prompt "Say only: ok"
 ```
 
-Read prompt from stdin:
+Read the prompt from stdin:
+
 ```bash
 echo "Say only: ok" | uv run codex-weave --prompt -
 ```
 
-Pass Codex options:
-```bash
-uv run codex-weave \
-  --prompt "review this repo" \
-  --model o3 \
-  --sandbox workspace-write \
-  --profile default
-```
-
-## Sync Interactive TUI Sessions
-Capture full interactive sessions (non-`exec`) from local Codex session files:
-
+### Ingest interactive Codex sessions
 ```bash
 uv run codex-weave-sync-interactive --once
 ```
 
 Continuous polling mode:
+
 ```bash
 uv run codex-weave-sync-interactive \
   --poll-seconds 15 \
   --quiet-seconds 30
 ```
 
-- Default source paths: `~/.codex/session_index.jsonl` and `~/.codex/sessions/`.
-- Checkpoint state: `~/.codex/weave_sync_state.json`.
-- Redaction is enabled by default; add `--no-redaction` to disable.
-- Orphaned completed sessions that exist on disk but are missing from the index are recovered automatically by default.
-- For a one-session live demo, use isolated temp index/state files with `--no-recover-orphans` so the run does not backfill unrelated historical sessions.
-
-## Score Interactive Traces
-Score an interactive trace JSON with deterministic heuristics plus a structured scorer:
-
+### Score an interactive trace
 ```bash
-uv run codex-score-interactive \
-  --trace-file path/to/interactive-trace.json
+uv run codex-score-interactive --trace-file path/to/interactive-trace.json
 ```
 
-- The default `subagent` backend returns a fast structured analysis with derived task text, friction signals, workflow failures, and recommended document/config improvements.
-- The default CLI output is a human-readable analysis summary so users see actionable guidance first instead of raw metrics.
-- Add `--json` to emit the raw structured payload for automation.
-- Use `--scoring-backend external` to run the older `codex exec`-based audit path.
-- If the external audit returns malformed or off-schema JSON, the scorer retries once with a repair prompt and then falls back to heuristic-only scoring while preserving the raw judge output.
-- Scores can be used to attribute likely improvement surfaces such as `AGENTS.md`, `README.md`, skills, or Codex config.
-- Interactive traces derive a compact user-task summary from the session to avoid sending the full injected instruction block to the judge.
+Structured JSON output:
 
-Example default summary:
-```text
-Task: demo task
-Outcome: completed
-Friction signals: clarification_needed
-Workflow gaps: none
-Recommendations: Clarify README.md demo workflow.
-```
-
-Example external audit:
 ```bash
 uv run codex-score-interactive \
   --trace-file path/to/interactive-trace.json \
-  --scoring-backend external
+  --json
 ```
 
-## Online Guardrails
-Guardrails are scored and attached to each trace.
-
-```bash
-uv run codex-weave \
-  --prompt "how are you?" \
-  --must-contain "ok" \
-  --must-not-contain "forbidden" \
-  --max-chars 120 \
-  --required-section "Summary" \
-  --require-file-paths \
-  --guardrail-mode warn
-```
-
-- `--guardrail-mode warn`: print violations, keep exit code.
-- `--guardrail-mode fail`: return exit code `3` on violations.
-- `--require-json`: require valid JSON output.
-- `--required-section <name>`: repeatable section-text requirement.
-- `--require-file-paths`: require at least one file path citation.
-
-
-## Generate Cases from Recent Traces
-Create draft eval cases from recent `codex-weave` traces:
-
+### Generate eval cases from recent traces
 ```bash
 uv run codex-casegen \
   --limit 20 \
   --output evals/cases.generated.jsonl
 ```
 
-Then review and refine generated checks (`must_contain`, `must_not_contain`, `max_chars`).
-
-To also bootstrap cases from ingested interactive traces:
-```bash
-uv run codex-casegen \
-  --limit 20 \
-  --include-interactive \
-  --output evals/cases.generated.jsonl
-```
-
-Optional redaction for sensitive prompt fragments:
-```bash
-uv run codex-casegen \
-  --limit 20 \
-  --output evals/cases.generated.jsonl \
-  --redact-regex 'sk-[A-Za-z0-9]+' \
-  --redact-regex '[\\w.-]+@[\\w.-]+'
-```
-
-When interactive traces contain a derived `user_task`, `codex-casegen` uses that cleaned task text instead of the raw thread name.
-
-## Offline Evals (Doc Impact)
-Run baseline + variants on the same case set:
-
+### Compare document or config variants
 ```bash
 uv run codex-eval \
   --cases evals/cases.jsonl \
@@ -163,60 +127,109 @@ uv run codex-eval \
   --token-regression-threshold 0.20
 ```
 
-Case file format (`evals/cases.jsonl`):
-```json
-{"prompt":"Say only: ok","must_contain":["ok"],"must_not_contain":["sorry"],"max_chars":40,"require_json":false,"required_sections":[],"require_file_paths":false}
-```
+## How AgentKaizen Uses Weave
+The important mapping is:
 
-Variant file format:
-```json
-{
-  "name": "agents-extra-rule",
-  "file_edits": [
-    {
-      "path": "AGENTS.md",
-      "source_scope": "repo",
-      "mode": "append",
-      "text": "\nAlways include file references in implementation explanations.\n"
-    }
-  ],
-  "codex_config": {
-    "profile": "default"
-  }
-}
-```
+1. `weave.init(...)`
+Connects the current CLI command to a W&B project.
 
-`mode` supports `append`, `prepend`, and `replace`.
+2. `@weave.op()`
+Wraps important operations so their inputs, outputs, and metadata become traces.
 
-External skill docs can be materialized into the temporary eval workspace with:
+3. `weave.Evaluation(...)`
+Runs the same case set against multiple candidate variants and summarizes scorer results.
 
-```json
-{
-  "name": "skill-update",
-  "external_files": [
-    {
-      "source": "/abs/path/to/SKILL.md",
-      "target": "external_skills/demo/SKILL.md"
-    }
-  ],
-  "file_edits": [
-    {
-      "path": "/abs/path/to/SKILL.md",
-      "source_scope": "external",
-      "mode": "append",
-      "text": "\nPrefer concise answers.\n"
-    }
-  ]
-}
-```
+4. Shared scorers
+Translate desired agent behavior into measurable checks such as required text, forbidden text, output length, JSON validity, file path citations, and token usage.
 
-`codex-eval` exits with code `4` if a candidate fails regression gates (quality is similar but latency/tokens regress beyond threshold).
+This is what makes the repo useful: it turns prompt and documentation tuning into an evaluation loop instead of guesswork.
+
+### Capability Mapping
+#### 1. Two tracking modes
+This project uses Weave tracing in two distinct modes:
+- one-shot tracing for `codex exec` runs through `codex-weave`
+- full-session ingestion for interactive Codex sessions through `codex-weave-sync-interactive`
+
+The one-shot mode stores a single prompt, command, event stream, final message, usage, and guardrail results. The interactive mode reconstructs an entire session from local Codex session files and stores messages, tool calls, usage, derived task text, and workflow analysis.
+
+#### 2. Prompts, datasets, scorers, and models
+Prompts in this repo come from:
+- direct `codex-weave` prompts
+- derived user tasks from interactive sessions
+- eval case prompts in `evals/cases.jsonl`
+- generated draft cases from past traces
+
+Datasets in this repo are the eval case files used by `codex-eval`, plus draft case files generated from traces.
+
+Scorers in this repo are shared functions that check:
+- required text
+- forbidden text
+- output length
+- JSON validity
+- required sections
+- file path citations
+- token usage
+
+Models in this repo are application-level Weave models, not provider SDK wrappers. `codex-eval` uses `CodexVariantModel(weave.Model)` to represent a candidate Codex behavior running inside a temporary workspace with specific config and document variants.
+
+#### 3. Image prompts
+W&B Weave can support multimodal traces, but this project is currently text-first. One-shot tracing accepts a text prompt, and interactive session ingestion flattens message content to text. That means image-bearing prompts are not preserved as first-class multimodal inputs in the current implementation.
+
+#### 4. App versioning with `weave.Model`
+This project uses `weave.Model` in offline evals to represent candidate app behavior. Each variant is effectively a versioned Codex application setup:
+- temporary workspace contents
+- Codex model and profile settings
+- candidate document or config edits
+
+This is a lightweight use of app versioning focused on comparison during evals, not a full model-registry workflow.
+
+#### 5. PII redaction
+This repo currently uses custom pre-upload redaction for interactive sessions rather than Weave's built-in PII redaction setting. The main reason is that the repo needs domain-specific sanitization beyond generic PII detection, including:
+- API keys and bearer tokens
+- filesystem paths and usernames
+- session-specific metadata cleanup
+- suppression of large instruction boilerplate when deriving the user task
+
+Built-in Weave redaction would still be a reasonable future improvement, but it would complement rather than replace the project-specific sanitization already implemented here.
+
+## Architecture
+The core flow is:
+
+1. Run or ingest Codex activity into Weave traces.
+2. Score those traces with guardrails or interactive-session heuristics.
+3. Generate reusable cases from real traces.
+4. Compare candidate steering changes, such as `AGENTS.md` edits, against the baseline.
+5. Promote the winning changes back into the real repo docs and instructions.
+
+Key entry points:
+- [codex_weave.py](./codex_weave.py)
+- [codex_interactive_sync.py](./codex_interactive_sync.py)
+- [codex_interactive_scoring.py](./codex_interactive_scoring.py)
+- [codex_evals.py](./codex_evals.py)
+- [codex_casegen.py](./codex_casegen.py)
+- [codex_scoring.py](./codex_scoring.py)
+
+## Repository Docs
+For deeper context, see:
+- [AGENTS.md](./AGENTS.md): repo-specific instructions for coding agents
+- [EVALS.md](./EVALS.md): evaluation strategy, datasets, scorers, heuristics, and judge flow
+- [PRODUCT.md](./PRODUCT.md): product purpose, users, and goals
+- [TECH.md](./TECH.md): stack, tooling, and constraints
+- [STRUCTURE.md](./STRUCTURE.md): file layout and architectural boundaries
+- [docs/workflows/user_workflow.md](./docs/workflows/user_workflow.md): recommended evaluation workflow
+
+Reference material:
+- [docs/reference/openai.md](./docs/reference/openai.md)
+- [docs/reference/anthropic.md](./docs/reference/anthropic.md)
 
 ## Development
-Run quality checks before committing:
+Run the standard checks before submitting changes:
 
 ```bash
 uv run --group dev pytest
 uv run --with ruff ruff check .
 uv run --with ruff ruff format --check .
 ```
+
+For more on supported Weave environment variables, see:
+- https://docs.wandb.ai/weave/guides/core-types/env-vars
