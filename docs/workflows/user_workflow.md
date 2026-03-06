@@ -1,6 +1,6 @@
 # User Workflow: Improving Codex Behavior with Weave
 
-This is a project-owned workflow guide for running the AgentKaizen loop. Before using the commands below, set `WANDB_API_KEY`, `WANDB_ENTITY`, and `WANDB_PROJECT` as described in the repository [README.md](/Users/yuyamukai/dev/AgentKaizen/README.md).
+This is a project-owned workflow guide for running the AgentKaizen loop. Before using the commands below, set `WANDB_API_KEY`, `WANDB_ENTITY`, and `WANDB_PROJECT` as described in the repository [README.md](../../README.md).
 
 ## Goal
 Use measurable experiments to improve Codex outputs by iterating on foundational documents and config surfaces (for example `AGENTS.md`, `README.md`, skills, and Codex profile/config choices).

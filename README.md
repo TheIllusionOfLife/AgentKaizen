@@ -202,25 +202,25 @@ The core flow is:
 5. Promote the winning changes back into the real repo docs and instructions.
 
 Key entry points:
-- [codex_weave.py](/Users/yuyamukai/dev/AgentKaizen/codex_weave.py)
-- [codex_interactive_sync.py](/Users/yuyamukai/dev/AgentKaizen/codex_interactive_sync.py)
-- [codex_interactive_scoring.py](/Users/yuyamukai/dev/AgentKaizen/codex_interactive_scoring.py)
-- [codex_evals.py](/Users/yuyamukai/dev/AgentKaizen/codex_evals.py)
-- [codex_casegen.py](/Users/yuyamukai/dev/AgentKaizen/codex_casegen.py)
-- [codex_scoring.py](/Users/yuyamukai/dev/AgentKaizen/codex_scoring.py)
+- [codex_weave.py](./codex_weave.py)
+- [codex_interactive_sync.py](./codex_interactive_sync.py)
+- [codex_interactive_scoring.py](./codex_interactive_scoring.py)
+- [codex_evals.py](./codex_evals.py)
+- [codex_casegen.py](./codex_casegen.py)
+- [codex_scoring.py](./codex_scoring.py)
 
 ## Repository Docs
 For deeper context, see:
-- [AGENTS.md](/Users/yuyamukai/dev/AgentKaizen/AGENTS.md): repo-specific instructions for coding agents
-- [EVALS.md](/Users/yuyamukai/dev/AgentKaizen/EVALS.md): evaluation strategy, datasets, scorers, heuristics, and judge flow
-- [PRODUCT.md](/Users/yuyamukai/dev/AgentKaizen/PRODUCT.md): product purpose, users, and goals
-- [TECH.md](/Users/yuyamukai/dev/AgentKaizen/TECH.md): stack, tooling, and constraints
-- [STRUCTURE.md](/Users/yuyamukai/dev/AgentKaizen/STRUCTURE.md): file layout and architectural boundaries
-- [docs/workflows/user_workflow.md](/Users/yuyamukai/dev/AgentKaizen/docs/workflows/user_workflow.md): recommended evaluation workflow
+- [AGENTS.md](./AGENTS.md): repo-specific instructions for coding agents
+- [EVALS.md](./EVALS.md): evaluation strategy, datasets, scorers, heuristics, and judge flow
+- [PRODUCT.md](./PRODUCT.md): product purpose, users, and goals
+- [TECH.md](./TECH.md): stack, tooling, and constraints
+- [STRUCTURE.md](./STRUCTURE.md): file layout and architectural boundaries
+- [docs/workflows/user_workflow.md](./docs/workflows/user_workflow.md): recommended evaluation workflow
 
 Reference material:
-- [docs/reference/openai.md](/Users/yuyamukai/dev/AgentKaizen/docs/reference/openai.md)
-- [docs/reference/anthropic.md](/Users/yuyamukai/dev/AgentKaizen/docs/reference/anthropic.md)
+- [docs/reference/openai.md](./docs/reference/openai.md)
+- [docs/reference/anthropic.md](./docs/reference/anthropic.md)
 
 ## Development
 Run the standard checks before submitting changes:
