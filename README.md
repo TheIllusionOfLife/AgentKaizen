@@ -143,7 +143,7 @@ uv run codex-eval \
   --variant-file evals/variants/example_agents_japanese_response.json
 ```
 
-`codex-eval` runs each variant inside a temporary workspace and automatically adds `--skip-git-repo-check` for those transient copies.
+`codex-eval` runs each variant inside a temporary workspace and, unless you already passed it, automatically adds `--skip-git-repo-check` to the Codex invocation.
 
 ## How AgentKaizen Uses Weave
 The important mapping is:

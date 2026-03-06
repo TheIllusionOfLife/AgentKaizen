@@ -10,6 +10,7 @@ import sys
 from dataclasses import dataclass
 from typing import Any, Iterable
 
+from dotenv import dotenv_values
 import weave
 from weave.trace.settings import UserSettings
 from weave.utils.pii_redaction import redact_pii
@@ -242,16 +243,12 @@ def load_wandb_env_from_env_file(path: pathlib.Path) -> dict[str, str]:
     if not path.exists():
         return {}
 
-    loaded: dict[str, str] = {}
-    for raw_line in path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        normalized_key = key.strip()
-        if normalized_key in SUPPORTED_WANDB_ENV_KEYS:
-            loaded[normalized_key] = value.strip().strip("'").strip('"')
-    return loaded
+    loaded = dotenv_values(path)
+    return {
+        key: value
+        for key, value in loaded.items()
+        if key in SUPPORTED_WANDB_ENV_KEYS and value is not None
+    }
 
 
 def load_wandb_api_key_from_env_file(path: pathlib.Path) -> str | None:

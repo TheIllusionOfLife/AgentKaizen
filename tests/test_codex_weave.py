@@ -211,6 +211,31 @@ def test_load_wandb_env_from_env_file_reads_supported_fields(tmp_path):
     }
 
 
+def test_load_wandb_env_from_env_file_supports_common_dotenv_forms(tmp_path):
+    env_file = tmp_path / ".env.local"
+    env_file.write_text(
+        "\n".join(
+            [
+                "export WANDB_API_KEY='abc123'",
+                'WANDB_ENTITY="team-name"',
+                "WANDB_PROJECT=project-name # inline comment",
+                "WANDB_BASE_URL=https://example.invalid",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    loaded = codex_weave.load_wandb_env_from_env_file(env_file)
+
+    assert loaded == {
+        "WANDB_API_KEY": "abc123",
+        "WANDB_ENTITY": "team-name",
+        "WANDB_PROJECT": "project-name",
+        "WANDB_BASE_URL": "https://example.invalid",
+    }
+
+
 def test_ensure_wandb_env_uses_dotenv_local_without_overwriting_env(
     monkeypatch, tmp_path
 ):

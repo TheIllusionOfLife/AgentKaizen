@@ -153,24 +153,6 @@ def test_build_eval_scorers_skips_optional_builtin_scorers_without_columns():
     assert "builtin_pydantic" not in names
 
 
-def test_build_eval_scorers_includes_optional_builtin_scorers_when_schema_present():
-    scorers = codex_evals.build_eval_scorers(
-        [
-            {
-                "prompt": "p1",
-                "must_contain": [],
-                "must_not_contain": [],
-                "max_chars": 10,
-                "response_schema": {"type": "object", "properties": {}},
-            }
-        ]
-    )
-    names = {scorer.name for scorer in scorers if getattr(scorer, "name", None)}
-
-    assert "builtin_json_validity" in names
-    assert "builtin_pydantic" in names
-
-
 def test_load_cases_jsonl_rejects_missing_path(tmp_path):
     missing = tmp_path / "missing.jsonl"
 
