@@ -68,17 +68,25 @@ uv run codex-weave-sync-interactive \
 - Orphaned completed sessions that exist on disk but are missing from the index are recovered automatically by default.
 
 ## Score Interactive Traces
-Score an interactive trace JSON with deterministic heuristics plus a judge that runs through Codex CLI:
+Score an interactive trace JSON with deterministic heuristics plus a structured scorer:
 
 ```bash
 uv run codex-score-interactive \
   --trace-file path/to/interactive-trace.json
 ```
 
-- The judge runs via `codex exec`, not direct model API calls.
-- If the judge returns malformed or off-schema JSON, the scorer retries once with a repair prompt and then falls back to heuristic-only scoring while preserving the raw judge output.
+- The default `subagent` backend returns a fast structured analysis with derived task text, friction signals, workflow failures, and recommended document/config improvements.
+- Use `--scoring-backend external` to run the older `codex exec`-based audit path.
+- If the external audit returns malformed or off-schema JSON, the scorer retries once with a repair prompt and then falls back to heuristic-only scoring while preserving the raw judge output.
 - Scores can be used to attribute likely improvement surfaces such as `AGENTS.md`, `README.md`, skills, or Codex config.
 - Interactive traces derive a compact user-task summary from the session to avoid sending the full injected instruction block to the judge.
+
+Example external audit:
+```bash
+uv run codex-score-interactive \
+  --trace-file path/to/interactive-trace.json \
+  --scoring-backend external
+```
 
 ## Online Guardrails
 Guardrails are scored and attached to each trace.

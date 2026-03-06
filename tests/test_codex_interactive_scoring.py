@@ -164,7 +164,9 @@ def test_run_subagent_analysis_returns_structured_recommendations():
 
     assert result["scorer_backend"] == "subagent"
     assert result["optimization_relevance"] == "agents"
-    assert result["derived_user_task"] == "Improve AGENTS.md so live demos read docs first"
+    assert (
+        result["derived_user_task"] == "Improve AGENTS.md so live demos read docs first"
+    )
     assert "high_corrections" in result["friction_signals"]
     assert result["recommended_changes"]
 
@@ -207,7 +209,7 @@ def test_score_interactive_trace_payload_defaults_to_subagent(monkeypatch):
                 "user_correction_count": 0,
                 "clarification_question_count": 0,
             },
-        }
+        },
     )
 
     assert result["scorer_backend"] == "subagent"
@@ -264,7 +266,13 @@ def test_main_uses_context_manager_and_subagent_backend(monkeypatch, tmp_path, c
     )
     monkeypatch.setattr(codex_interactive_scoring, "ensure_wandb_api_key", lambda: "x")
     monkeypatch.setattr(
-        codex_interactive_scoring, "weave", type("Weave", (), {"init": lambda *_a, **_k: None, "op": lambda *_a, **_k: (lambda fn: fn)})()
+        codex_interactive_scoring,
+        "weave",
+        type(
+            "Weave",
+            (),
+            {"init": lambda *_a, **_k: None, "op": lambda *_a, **_k: lambda fn: fn},
+        )(),
     )
     monkeypatch.setattr(
         codex_interactive_scoring,
@@ -449,7 +457,8 @@ def test_score_interactive_trace_payload_falls_back_when_repair_fails(monkeypatc
                 "user_correction_count": 0,
                 "clarification_question_count": 0,
             },
-        }
+        },
+        scoring_backend="external",
     )
 
     assert result["task_success"] == 1.0
@@ -524,7 +533,8 @@ def test_score_interactive_trace_payload_falls_back_when_repair_command_fails(
                 "user_correction_count": 0,
                 "clarification_question_count": 0,
             },
-        }
+        },
+        scoring_backend="external",
     )
 
     assert result["judge_status"] == "fallback"
