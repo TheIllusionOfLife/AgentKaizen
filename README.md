@@ -188,10 +188,12 @@ Datasets in this repo are the eval case suite files under `evals/cases/`, plus d
 Scorers in this repo are shared functions and Weave built-ins that check:
 - required text
 - forbidden text
+- minimum output length
 - output length
 - JSON validity
 - schema conformance
 - required sections
+- required content groups
 - file path citations
 - token usage
 

@@ -375,7 +375,9 @@ def test_build_interactive_trace_marks_corrections_and_command_categories(tmp_pa
     assert trace["analysis"]["completion_signal_source"] == "incomplete"
 
 
-def test_build_interactive_trace_detects_clarification_turns_with_confirmation(tmp_path):
+def test_build_interactive_trace_detects_clarification_turns_with_confirmation(
+    tmp_path,
+):
     session_file = tmp_path / "rollout.jsonl"
     session_file.write_text(
         "\n".join(

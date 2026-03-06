@@ -21,6 +21,8 @@ from codex_scoring import (
     score_forbidden_absent,
     score_json_validity,
     score_max_chars,
+    score_min_chars,
+    score_required_content_groups,
     score_required_sections,
     score_token_usage,
 )
@@ -214,8 +216,10 @@ contains_all_scorer = weave.op()(score_contains_all)
 forbidden_absent_scorer = weave.op()(score_forbidden_absent)
 exact_match_scorer = weave.op()(score_exact_match)
 max_chars_scorer = weave.op()(score_max_chars)
+min_chars_scorer = weave.op()(score_min_chars)
 json_validity_scorer = weave.op()(score_json_validity)
 required_sections_scorer = weave.op()(score_required_sections)
+required_content_groups_scorer = weave.op()(score_required_content_groups)
 file_path_citations_scorer = weave.op()(score_file_path_citations)
 token_usage_scorer = weave.op()(score_token_usage)
 
@@ -344,8 +348,10 @@ def build_eval_scorers(cases: list[dict[str, Any]] | None = None) -> list[Any]:
         forbidden_absent_scorer,
         exact_match_scorer,
         max_chars_scorer,
+        min_chars_scorer,
         json_validity_scorer,
         required_sections_scorer,
+        required_content_groups_scorer,
         file_path_citations_scorer,
         token_usage_scorer,
     ]
@@ -600,6 +606,10 @@ def _quality_score(summary: dict[str, Any], quality_keys: list[str]) -> float:
 def _active_quality_keys(summary: dict[str, Any]) -> list[str]:
     keys = ["score_contains_all", "score_forbidden_absent", "score_max_chars"]
 
+    min_chars_required = _extract_mean(summary, "score_min_chars", "min_chars") or 0.0
+    if min_chars_required > 0.0:
+        keys.append("score_min_chars")
+
     exact_match_required = float(
         summary.get("score_exact_match", {})
         .get("exact_match_required", {})
@@ -626,6 +636,15 @@ def _active_quality_keys(summary: dict[str, Any]) -> list[str]:
     )
     if required_sections_mean > 0.0:
         keys.append("score_required_sections")
+
+    required_group_mean = float(
+        summary.get("score_required_content_groups", {})
+        .get("required_group_count", {})
+        .get("mean", 0.0)
+        or 0.0
+    )
+    if required_group_mean > 0.0:
+        keys.append("score_required_content_groups")
 
     require_paths_fraction = float(
         summary.get("score_file_path_citations", {})
@@ -743,10 +762,12 @@ def render_ranked_summary_table(ranked: list[dict[str, Any]]) -> str:
                 f"   forbidden_pass: {_extract_true_fraction(summary, 'score_forbidden_absent'):.3f}",
                 f"   exact_match_pass: {_extract_true_fraction(summary, 'score_exact_match'):.3f}",
                 f"   max_chars_pass: {_extract_true_fraction(summary, 'score_max_chars'):.3f}",
+                f"   min_chars_pass: {_extract_true_fraction(summary, 'score_min_chars'):.3f}",
                 f"   json_pass: {_extract_true_fraction(summary, 'score_json_validity'):.3f}",
                 f"   builtin_json_pass: {_extract_true_fraction(summary, 'builtin_json_validity'):.3f}",
                 f"   schema_pass: {_extract_true_fraction(summary, 'builtin_pydantic'):.3f}",
                 f"   sections_pass: {_extract_true_fraction(summary, 'score_required_sections'):.3f}",
+                f"   content_groups_pass: {_extract_true_fraction(summary, 'score_required_content_groups'):.3f}",
                 f"   file_paths_pass: {_extract_true_fraction(summary, 'score_file_path_citations'):.3f}",
                 f"   latency_mean: {item['latency_mean'] if item['latency_mean'] is not None else 'n/a'}",
                 f"   total_tokens_mean: {item['token_mean'] if item['token_mean'] is not None else 'n/a'}",

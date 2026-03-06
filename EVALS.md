@@ -34,10 +34,12 @@ The shared deterministic scorers live in `codex_scoring.py` and are used by `cod
 Current scorers:
 - required substring presence
 - forbidden substring absence
+- minimum output length
 - maximum output length
 - JSON parse validity
 - schema-aware JSON validation
 - required section presence
+- required content-group coverage
 - file path citation presence
 - token usage extraction
 
@@ -110,7 +112,9 @@ The flow is:
 This makes document and config tuning measurable and comparable.
 
 For language and style experiments such as "respond in Japanese" or "be more concise", prefer:
+- `min_chars` when you need to prevent underspecified replies
 - `max_chars` when brevity matters
+- `required_content_groups` when you need one item from each concept bucket without forcing exact phrasing
 - exact-match control prompts to catch over-application of the steering change
 - curated prompt suites with deterministic checks rather than external-API-backed semantic scorers
 
@@ -131,9 +135,16 @@ The heuristic layer uses signals extracted from session traces, such as:
 
 From those, the scorer derives:
 - `task_completed`
+- `task_success_estimate`
 - `workflow_compliance`
 - `user_friction`
 - `efficiency`
+
+The interactive scorer also returns additive breakdowns so the result is easier to audit:
+- `task_success_factors`
+- `friction_breakdown`
+- `workflow_signal_breakdown`
+- `efficiency_breakdown`
 
 It also derives structured labels such as:
 - `high_corrections`
