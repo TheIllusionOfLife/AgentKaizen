@@ -131,3 +131,112 @@ def test_run_codex_judge_wraps_timeout(monkeypatch):
         assert "timed out" in str(exc)
     else:
         raise AssertionError("Expected RuntimeError")
+
+
+def test_run_codex_judge_repairs_invalid_response_once(monkeypatch):
+    outputs = iter(
+        [
+            type(
+                "Proc",
+                (),
+                {
+                    "returncode": 0,
+                    "stdout": '\n'.join(
+                        [
+                            json.dumps(
+                                {
+                                    "type": "item.completed",
+                                    "item": {
+                                        "type": "agent_message",
+                                        "text": json.dumps(
+                                            {
+                                                "task_success": True,
+                                                "user_friction": "medium",
+                                                "workflow_compliance": "mixed",
+                                                "efficiency": "medium",
+                                                "optimization_relevance": "medium",
+                                                "reasoning": "raw",
+                                            }
+                                        ),
+                                    },
+                                }
+                            )
+                        ]
+                    ),
+                    "stderr": "",
+                },
+            )(),
+            type(
+                "Proc",
+                (),
+                {
+                    "returncode": 0,
+                    "stdout": '\n'.join(
+                        [
+                            json.dumps(
+                                {
+                                    "type": "item.completed",
+                                    "item": {
+                                        "type": "agent_message",
+                                        "text": json.dumps(
+                                            {
+                                                "task_success": 0.8,
+                                                "user_friction": 0.3,
+                                                "workflow_compliance": 0.5,
+                                                "efficiency": 0.4,
+                                                "optimization_relevance": "agents",
+                                                "reasoning": "repaired",
+                                            }
+                                        ),
+                                    },
+                                }
+                            )
+                        ]
+                    ),
+                    "stderr": "",
+                },
+            )(),
+        ]
+    )
+
+    monkeypatch.setattr(
+        codex_interactive_scoring.subprocess,
+        "run",
+        lambda *_args, **_kwargs: next(outputs),
+    )
+
+    result = codex_interactive_scoring.run_codex_judge({"analysis_summary": "x"})
+
+    assert result["task_success"] == 0.8
+    assert result["optimization_relevance"] == "agents"
+
+
+def test_score_interactive_trace_payload_falls_back_when_repair_fails(monkeypatch):
+    monkeypatch.setattr(
+        codex_interactive_scoring,
+        "run_codex_judge",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            ValueError("Judge output contains an invalid optimization_relevance.")
+        ),
+    )
+
+    result = codex_interactive_scoring.score_interactive_trace_payload(
+        {
+            "thread_name": "demo",
+            "analysis": {
+                "task_completed": True,
+                "branch_created": True,
+                "used_uv": True,
+                "ran_tests": True,
+                "tool_call_count": 3,
+                "user_correction_count": 0,
+                "clarification_question_count": 0,
+            },
+        }
+    )
+
+    assert result["task_success"] == 1.0
+    assert result["optimization_relevance"] == "none"
+    assert result["judge_status"] == "fallback"
+    assert "invalid optimization_relevance" in result["judge_error"]
+    assert result["raw_judge_output"] == ""

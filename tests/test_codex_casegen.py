@@ -92,12 +92,13 @@ def test_main_missing_wandb_api_key_writes_to_stderr(monkeypatch, capsys):
 def test_build_case_from_interactive_trace():
     trace = {
         "thread_name": "How do I optimize AGENTS?",
+        "user_task": "Improve AGENTS.md instructions for live demos",
         "analysis_summary": "The user had to correct the agent twice.",
     }
 
     case = codex_casegen.build_case_from_interactive_trace(trace, max_chars_padding=20)
 
-    assert case["prompt"] == "How do I optimize AGENTS?"
+    assert case["prompt"] == "Improve AGENTS.md instructions for live demos"
     assert case["source"] == "interactive"
     assert case["max_chars"] >= len(trace["analysis_summary"])
 
