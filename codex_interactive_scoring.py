@@ -47,13 +47,51 @@ def score_interactive_heuristics(trace: dict[str, Any]) -> dict[str, Any]:
     clarification_count = int(analysis.get("clarification_question_count") or 0)
     user_correction_count = int(analysis.get("user_correction_count") or 0)
     friction = min(1.0, 0.25 * clarification_count + 0.5 * user_correction_count)
-    efficiency = max(0.0, 1.0 - 0.05 * max(0, tool_call_count - 2) - friction / 2)
+    tool_penalty = min(0.75, 0.1 * math.log1p(max(0, tool_call_count - 2)))
+    efficiency = max(0.0, 1.0 - tool_penalty - friction / 2)
     return {
         "task_completed": bool(analysis.get("task_completed")),
         "workflow_compliance": round(workflow_compliance, 3),
         "user_friction": round(friction, 3),
         "efficiency": round(efficiency, 3),
     }
+
+
+def format_score_summary(result: dict[str, Any]) -> str:
+    task = str(result.get("derived_user_task", "")).strip() or "Unknown task"
+    try:
+        task_success = float(result.get("task_success", 0.0))
+    except (TypeError, ValueError):
+        task_success = 0.0
+    outcome = "completed" if task_success >= 0.5 else "incomplete"
+    friction_signals = list(result.get("friction_signals", []))
+    workflow_failures = list(result.get("workflow_failures", []))
+    recommendations = list(result.get("recommended_changes", []))
+    reasoning = str(result.get("reasoning", "")).strip()
+    heuristics = result.get("heuristics", {})
+    if not isinstance(heuristics, dict):
+        heuristics = {}
+
+    lines = [
+        f"Task: {task}",
+        f"Outcome: {outcome}",
+        "Friction signals: "
+        + (", ".join(friction_signals) if friction_signals else "none"),
+        "Workflow gaps: "
+        + (", ".join(workflow_failures) if workflow_failures else "none"),
+        "Recommendations: "
+        + ("; ".join(recommendations) if recommendations else "none"),
+    ]
+    if reasoning:
+        lines.append(f"Why: {reasoning}")
+    if heuristics:
+        lines.append(
+            "Metrics: "
+            f"workflow={heuristics.get('workflow_compliance', 0.0):.3f}, "
+            f"friction={heuristics.get('user_friction', 0.0):.3f}, "
+            f"efficiency={heuristics.get('efficiency', 0.0):.3f}"
+        )
+    return "\n".join(lines)
 
 
 def parse_judge_response(text: str) -> dict[str, Any]:
@@ -470,6 +508,11 @@ def _build_parser() -> argparse.ArgumentParser:
         choices=sorted(ALLOWED_SCORING_BACKENDS),
         help="Scoring backend to use; subagent is the default fast path and external uses codex exec.",
     )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit the raw JSON scoring payload instead of the human summary.",
+    )
     parser.add_argument("--timeout-seconds", type=int, default=300)
     return parser
 
@@ -499,7 +542,11 @@ def main(argv: list[str] | None = None) -> int:
             timeout_seconds=args.timeout_seconds,
         )
 
-    print(json.dumps(score_interactive_trace(trace), ensure_ascii=True))
+    result = score_interactive_trace(trace)
+    if args.json:
+        print(json.dumps(result, ensure_ascii=True))
+    else:
+        print(format_score_summary(result))
     return 0
 
 

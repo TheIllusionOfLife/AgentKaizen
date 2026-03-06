@@ -361,6 +361,66 @@ def _load_tool_command(tool_call: dict[str, Any]) -> str:
     return ""
 
 
+def _load_tool_output(tool_call: dict[str, Any]) -> dict[str, Any]:
+    if tool_call.get("name") != "function_call_output":
+        return {}
+    raw_output = tool_call.get("output")
+    if not isinstance(raw_output, str):
+        return {}
+    try:
+        payload = json.loads(raw_output)
+    except json.JSONDecodeError:
+        return {}
+    if isinstance(payload, dict):
+        return payload
+    return {}
+
+
+def _message_is_clarification(
+    assistant_message: dict[str, Any], next_message: dict[str, Any] | None
+) -> bool:
+    if assistant_message.get("phase") == "commentary":
+        return False
+    content = _normalize_whitespace(_as_string(assistant_message.get("content")))
+    if "?" not in content:
+        return False
+    lowered = content.lower()
+    clarification_patterns = (
+        "should i ",
+        "would you like",
+        "do you want",
+        "which ",
+        "can you confirm",
+        "could you confirm",
+        "what should",
+        "how should",
+    )
+    if not any(pattern in lowered for pattern in clarification_patterns):
+        return False
+    if not next_message or next_message.get("role") != "user":
+        return False
+    next_content = _normalize_whitespace(
+        _as_string(next_message.get("content"))
+    ).lower()
+    if not next_content:
+        return False
+    return any(
+        next_content.startswith(prefix)
+        for prefix in (
+            "yes",
+            "no",
+            "please",
+            "use ",
+            "go ",
+            "run ",
+            "do ",
+            "the ",
+            "this ",
+            "that ",
+        )
+    )
+
+
 def _build_interactive_analysis(
     *, messages: list[dict[str, Any]], tool_calls: list[dict[str, Any]], status: str
 ) -> dict[str, Any]:
@@ -393,8 +453,12 @@ def _build_interactive_analysis(
     )
     clarification_question_count = sum(
         1
-        for msg in assistant_messages
-        if "?" in _as_string(msg.get("content")) and msg.get("phase") != "commentary"
+        for index, msg in enumerate(messages)
+        if msg.get("role") == "assistant"
+        and _message_is_clarification(
+            msg,
+            messages[index + 1] if index + 1 < len(messages) else None,
+        )
     )
     branch_created = any(
         "git checkout -b" in cmd or "git switch -c" in cmd for cmd in commands
@@ -410,9 +474,15 @@ def _build_interactive_analysis(
     used_skills = any("SKILL.md" in _as_string(msg.get("content")) for msg in messages)
     error_count = sum(
         1
-        for msg in assistant_messages
-        if _contains_any(
-            _as_string(msg.get("content")), ["error", "failed", "exception"]
+        for call in tool_calls
+        if (
+            (payload := _load_tool_output(call))
+            and (
+                int(payload.get("exit_code") or 0) != 0
+                or int(payload.get("returncode") or 0) != 0
+                or bool(payload.get("error"))
+                or bool(payload.get("exception"))
+            )
         )
     )
 
@@ -494,6 +564,7 @@ def build_interactive_trace(
     token_usage: dict[str, Any] = {}
     malformed_lines = 0
     complete = False
+    completed_at = ""
 
     for raw_line in session_file.read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()
@@ -579,6 +650,7 @@ def build_interactive_trace(
                     )
             elif payload_type == "task_complete":
                 complete = True
+                completed_at = ts
 
     status = "complete" if complete else "partial"
     if malformed_lines > 0 and not messages and not tool_calls:
@@ -589,22 +661,28 @@ def build_interactive_trace(
         status=status,
     )
     user_task, user_task_source = _derive_user_task(safe_thread_name, messages)
+    resolved_thread_name = safe_thread_name or user_task
+    updated_at = (
+        _as_string((discovery_metadata or {}).get("updated_at")) or completed_at
+    )
 
     return {
         "source": "codex_interactive",
         "session_id": _as_string(session_meta.get("id") or session_file.stem),
-        "thread_name": safe_thread_name,
+        "thread_name": resolved_thread_name,
         "user_task": user_task,
         "cwd": _sanitize_path(redactor(_as_string(session_meta.get("cwd")))),
         "cli_version": _as_string(session_meta.get("cli_version")),
         "started_at": _as_string(session_meta.get("timestamp")),
+        "completed_at": completed_at,
+        "updated_at": updated_at,
         "status": status,
         "messages": messages,
         "tool_calls": tool_calls,
         "token_usage": token_usage,
         "analysis": analysis,
         "analysis_summary": _build_analysis_summary(
-            thread_name=safe_thread_name,
+            thread_name=resolved_thread_name,
             user_task=user_task,
             messages=messages,
             analysis=analysis,

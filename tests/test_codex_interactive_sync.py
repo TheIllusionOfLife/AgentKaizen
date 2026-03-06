@@ -117,6 +117,8 @@ def test_build_interactive_trace_extracts_messages_and_usage(tmp_path):
     assert trace["session_id"] == "abc"
     assert trace["thread_name"] == "demo"
     assert trace["status"] == "complete"
+    assert trace["completed_at"] == "2026-03-06T00:00:03Z"
+    assert trace["updated_at"] == "2026-03-06T00:00:03Z"
     assert trace["token_usage"]["input_tokens"] == 10
     assert trace["token_usage"]["output_tokens"] == 5
     assert trace["messages"][0]["content"] == "hello"
@@ -198,6 +200,113 @@ def test_build_interactive_trace_derives_user_task_and_compact_summary(tmp_path)
     assert trace["user_task"] == "Show me a demo of what's implemented in PR #4."
     assert "Show me a demo" in trace["analysis_summary"]
     assert "# AGENTS.md instructions" not in trace["analysis_summary"]
+
+
+def test_build_interactive_trace_prefers_discovery_updated_at(tmp_path):
+    session_file = tmp_path / "rollout.jsonl"
+    session_file.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "timestamp": "2026-03-06T00:00:00Z",
+                        "type": "session_meta",
+                        "payload": {
+                            "id": "abc",
+                            "cwd": "/repo",
+                            "cli_version": "0.110.0",
+                            "timestamp": "2026-03-06T00:00:00Z",
+                        },
+                    }
+                ),
+                json.dumps(
+                    {
+                        "timestamp": "2026-03-06T00:00:05Z",
+                        "type": "event_msg",
+                        "payload": {"type": "task_complete"},
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    trace = codex_interactive_sync.build_interactive_trace(
+        session_file=session_file,
+        thread_name="demo",
+        redactor=codex_interactive_sync.build_redactor([]),
+        discovery_metadata={"updated_at": "2026-03-06T00:00:09Z"},
+    )
+
+    assert trace["completed_at"] == "2026-03-06T00:00:05Z"
+    assert trace["updated_at"] == "2026-03-06T00:00:09Z"
+
+
+def test_build_interactive_trace_backfills_empty_thread_name_from_user_task(tmp_path):
+    session_file = tmp_path / "rollout.jsonl"
+    session_file.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "timestamp": "2026-03-06T00:00:00Z",
+                        "type": "session_meta",
+                        "payload": {
+                            "id": "abc",
+                            "cwd": "/repo",
+                            "cli_version": "0.110.0",
+                            "timestamp": "2026-03-06T00:00:00Z",
+                        },
+                    }
+                ),
+                json.dumps(
+                    {
+                        "timestamp": "2026-03-06T00:00:01Z",
+                        "type": "response_item",
+                        "payload": {
+                            "type": "message",
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "input_text",
+                                    "text": "# AGENTS.md instructions for /repo\n<INSTRUCTIONS>\nVery long boilerplate",
+                                }
+                            ],
+                        },
+                    }
+                ),
+                json.dumps(
+                    {
+                        "timestamp": "2026-03-06T00:00:02Z",
+                        "type": "event_msg",
+                        "payload": {
+                            "type": "user_message",
+                            "text": "Please demo the merged workflow.",
+                        },
+                    }
+                ),
+                json.dumps(
+                    {
+                        "timestamp": "2026-03-06T00:00:03Z",
+                        "type": "event_msg",
+                        "payload": {"type": "task_complete"},
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    trace = codex_interactive_sync.build_interactive_trace(
+        session_file=session_file,
+        thread_name="",
+        redactor=codex_interactive_sync.build_redactor([]),
+    )
+
+    assert trace["user_task"] == "Please demo the merged workflow."
+    assert trace["thread_name"] == "Please demo the merged workflow."
 
 
 def test_redaction_applies_default_patterns(tmp_path):
@@ -618,6 +727,59 @@ def test_build_interactive_trace_redacts_thread_name(tmp_path):
     assert "user@example.com" not in trace["thread_name"]
     assert "[REDACTED]" in trace["thread_name"]
     assert "user@example.com" not in trace["analysis_summary"]
+
+
+def test_build_interactive_analysis_counts_only_actionable_clarifications():
+    analysis = codex_interactive_sync._build_interactive_analysis(
+        messages=[
+            {
+                "role": "assistant",
+                "content": "I found the merged PR. Should I run the live demo now?",
+                "phase": "answer",
+            },
+            {
+                "role": "user",
+                "content": "Yes, please run it.",
+                "phase": "",
+            },
+            {
+                "role": "assistant",
+                "content": "I found the merged PR and asked myself whether the demo should use recovery mode?",
+                "phase": "final_answer",
+            },
+        ],
+        tool_calls=[],
+        status="complete",
+    )
+
+    assert analysis["clarification_question_count"] == 1
+
+
+def test_build_interactive_analysis_uses_structured_error_signals_not_keywords():
+    analysis = codex_interactive_sync._build_interactive_analysis(
+        messages=[
+            {
+                "role": "assistant",
+                "content": "If this fails, I will retry and summarize the error cleanly.",
+                "phase": "answer",
+            }
+        ],
+        tool_calls=[
+            {
+                "name": "exec_command",
+                "call_id": "call-1",
+                "arguments": json.dumps({"cmd": "uv run pytest"}),
+            },
+            {
+                "name": "function_call_output",
+                "call_id": "call-1",
+                "output": json.dumps({"exit_code": 1, "stderr": "tests failed"}),
+            },
+        ],
+        status="complete",
+    )
+
+    assert analysis["error_count"] == 1
 
 
 def test_build_interactive_analysis_counts_only_invocations():

@@ -30,6 +30,26 @@ def test_score_interactive_heuristics_flags_success_and_workflow():
     assert result["user_friction"] == 0.0
 
 
+def test_score_interactive_heuristics_keeps_large_successful_sessions_above_zero():
+    trace = {
+        "session_id": "s1",
+        "thread_name": "demo",
+        "analysis": {
+            "task_completed": True,
+            "branch_created": True,
+            "used_uv": True,
+            "ran_tests": True,
+            "tool_call_count": 245,
+            "user_correction_count": 0,
+            "clarification_question_count": 1,
+        },
+    }
+
+    result = codex_interactive_scoring.score_interactive_heuristics(trace)
+
+    assert result["efficiency"] > 0.0
+
+
 def test_parse_judge_response_requires_json_object():
     payload = codex_interactive_scoring.parse_judge_response(
         json.dumps(
@@ -325,6 +345,97 @@ def test_main_uses_context_manager_and_subagent_backend(monkeypatch, tmp_path, c
     )
 
     rc = codex_interactive_scoring.main(["--trace-file", str(trace_file)])
+    out = capsys.readouterr()
+
+    assert rc == 0
+    assert "Task: demo" in out.out
+    assert "Recommendations: none" in out.out
+
+
+def test_format_score_summary_emphasizes_actionable_feedback():
+    summary = codex_interactive_scoring.format_score_summary(
+        {
+            "derived_user_task": "demo task",
+            "task_success": 1.0,
+            "reasoning": "Detected friction signals: clarification_needed.",
+            "friction_signals": ["clarification_needed"],
+            "workflow_failures": [],
+            "recommended_changes": ["Clarify README.md demo workflow."],
+            "heuristics": {
+                "workflow_compliance": 1.0,
+                "user_friction": 0.25,
+                "efficiency": 0.7,
+            },
+        }
+    )
+
+    assert "Task: demo task" in summary
+    assert "Workflow gaps: none" in summary
+    assert "Recommendations: Clarify README.md demo workflow." in summary
+
+
+def test_format_score_summary_handles_non_numeric_task_success():
+    summary = codex_interactive_scoring.format_score_summary(
+        {
+            "derived_user_task": "demo task",
+            "task_success": "completed",
+            "friction_signals": [],
+            "workflow_failures": [],
+            "recommended_changes": [],
+        }
+    )
+
+    assert "Outcome: incomplete" in summary
+
+
+def test_main_can_emit_json_with_flag(monkeypatch, tmp_path, capsys):
+    trace_file = tmp_path / "trace.json"
+    trace_file.write_text(
+        json.dumps(
+            {
+                "thread_name": "demo",
+                "analysis": {
+                    "task_completed": True,
+                    "branch_created": True,
+                    "used_uv": True,
+                    "ran_tests": True,
+                    "tool_call_count": 3,
+                    "user_correction_count": 0,
+                    "clarification_question_count": 0,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(codex_interactive_scoring, "ensure_wandb_api_key", lambda: "x")
+    monkeypatch.setattr(
+        codex_interactive_scoring,
+        "weave",
+        type(
+            "Weave",
+            (),
+            {"init": lambda *_a, **_k: None, "op": lambda *_a, **_k: lambda fn: fn},
+        )(),
+    )
+    monkeypatch.setattr(
+        codex_interactive_scoring,
+        "run_subagent_analysis",
+        lambda *_args, **_kwargs: {
+            "task_success": 1.0,
+            "user_friction": 0.0,
+            "workflow_compliance": 1.0,
+            "efficiency": 1.0,
+            "optimization_relevance": "none",
+            "reasoning": "",
+            "scorer_backend": "subagent",
+            "derived_user_task": "demo",
+            "friction_signals": [],
+            "workflow_failures": [],
+            "recommended_changes": [],
+        },
+    )
+
+    rc = codex_interactive_scoring.main(["--trace-file", str(trace_file), "--json"])
     out = capsys.readouterr()
 
     assert rc == 0
