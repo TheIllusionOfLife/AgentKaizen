@@ -110,6 +110,14 @@ uv run codex-casegen \
 
 Then review and refine generated checks (`must_contain`, `must_not_contain`, `max_chars`).
 
+To also bootstrap cases from ingested interactive traces:
+```bash
+uv run codex-casegen \
+  --limit 20 \
+  --include-interactive \
+  --output evals/cases.generated.jsonl
+```
+
 Optional redaction for sensitive prompt fragments:
 ```bash
 uv run codex-casegen \

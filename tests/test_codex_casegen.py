@@ -100,3 +100,42 @@ def test_build_case_from_interactive_trace():
     assert case["prompt"] == "How do I optimize AGENTS?"
     assert case["source"] == "interactive"
     assert case["max_chars"] >= len(trace["analysis_summary"])
+
+
+def test_fetch_recent_interactive_cases_dedupes_by_thread_name(monkeypatch):
+    calls = [
+        SimpleNamespace(
+            op_name="ingest_interactive_session_traced",
+            output={
+                "source": "codex_interactive",
+                "thread_name": "optimize AGENTS",
+                "analysis_summary": "The user corrected the agent once.",
+            },
+        ),
+        SimpleNamespace(
+            op_name="ingest_interactive_session_traced",
+            output={
+                "source": "codex_interactive",
+                "thread_name": "optimize AGENTS",
+                "analysis_summary": "duplicate",
+            },
+        ),
+    ]
+
+    class FakeClient:
+        def get_calls(self, **_kwargs):
+            return calls
+
+    monkeypatch.setattr(
+        codex_casegen.weave_client_context, "get_weave_client", lambda: FakeClient()
+    )
+
+    result = codex_casegen.fetch_recent_interactive_cases(
+        limit=5,
+        op_substring="ingest_interactive_session_traced",
+        max_chars_padding=5,
+        redact_patterns=[],
+    )
+
+    assert len(result) == 1
+    assert result[0]["prompt"] == "optimize AGENTS"

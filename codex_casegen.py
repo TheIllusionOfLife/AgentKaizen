@@ -151,6 +151,51 @@ def fetch_recent_codex_cases(
     return cases[:limit]
 
 
+def fetch_recent_interactive_cases(
+    *,
+    limit: int,
+    op_substring: str,
+    max_chars_padding: int,
+    redact_patterns: list[str],
+) -> list[dict[str, Any]]:
+    client = weave_client_context.get_weave_client()
+    cases: list[dict[str, Any]] = []
+    seen_prompts: set[str] = set()
+
+    calls_iter = client.get_calls(
+        limit=max(limit * 5, 50),
+        sort_by=[{"field": "started_at", "direction": "desc"}],
+    )
+
+    for call in calls_iter:
+        op_name = str(getattr(call, "op_name", ""))
+        if op_substring not in op_name:
+            continue
+
+        output_obj = getattr(call, "output", None)
+        try:
+            output = dict(output_obj) if output_obj is not None else {}
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(output, dict):
+            continue
+        if output.get("source") != "codex_interactive":
+            continue
+
+        case = build_case_from_interactive_trace(
+            output, max_chars_padding=max_chars_padding
+        )
+        case["prompt"] = redact_prompt(case["prompt"], redact_patterns)
+        if case["prompt"] in seen_prompts:
+            continue
+        seen_prompts.add(case["prompt"])
+        cases.append(case)
+        if len(cases) >= limit:
+            break
+
+    return cases[:limit]
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Generate eval cases from recent Weave codex traces"
@@ -180,6 +225,16 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Only use calls whose op_name contains this value",
     )
     parser.add_argument(
+        "--include-interactive",
+        action="store_true",
+        help="Also generate draft cases from interactive session traces",
+    )
+    parser.add_argument(
+        "--interactive-op-substring",
+        default="ingest_interactive_session_traced",
+        help="Only use interactive calls whose op_name contains this value",
+    )
+    parser.add_argument(
         "--redact-regex",
         action="append",
         default=[],
@@ -204,6 +259,14 @@ def main(argv: list[str] | None = None) -> int:
         max_chars_padding=args.max_chars_padding,
         redact_patterns=args.redact_regex,
     )
+    if args.include_interactive:
+        interactive_cases = fetch_recent_interactive_cases(
+            limit=args.limit,
+            op_substring=args.interactive_op_substring,
+            max_chars_padding=args.max_chars_padding,
+            redact_patterns=args.redact_regex,
+        )
+        new_cases = deduplicate_cases_by_prompt([*new_cases, *interactive_cases])
 
     out_path = Path(args.output).expanduser().resolve()
     if args.append:
