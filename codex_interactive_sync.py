@@ -5,6 +5,7 @@ import json
 import logging
 import pathlib
 import re
+import shlex
 import sys
 import time
 from datetime import UTC, datetime, timedelta
@@ -69,6 +70,24 @@ def find_session_file(
     return matches[-1]
 
 
+def _flatten_message_content(value: Any) -> str:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        parts: list[str] = []
+        for item in value:
+            if isinstance(item, dict):
+                text = item.get("text")
+                if text is not None:
+                    parts.append(str(text))
+            else:
+                parts.append(str(item))
+        return " ".join(part for part in parts if part).strip()
+    if value is None:
+        return ""
+    return str(value)
+
+
 def load_sync_state(path: pathlib.Path) -> dict[str, Any]:
     if path.exists():
         try:
@@ -127,6 +146,130 @@ def select_sessions_to_process(
     return selected
 
 
+def recover_orphaned_sessions(
+    *,
+    session_root: pathlib.Path,
+    indexed_session_ids: set[str],
+    state: dict[str, Any],
+    now: datetime | None = None,
+    quiet_seconds: int = DEFAULT_QUIET_SECONDS,
+) -> list[dict[str, Any]]:
+    now_dt = now or datetime.now(UTC)
+    quiet_cutoff = now_dt - timedelta(seconds=quiet_seconds)
+    processed_ids = set(state.get("processed_session_ids", []))
+    recovered: list[dict[str, Any]] = []
+
+    for session_file in sorted(session_root.rglob("*.jsonl")):
+        session_id = ""
+        updated_at = ""
+        thread_name = ""
+        complete = False
+        try:
+            raw_lines = session_file.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            continue
+
+        for raw_line in raw_lines:
+            line = raw_line.strip()
+            if not line:
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(record, dict):
+                continue
+            payload = record.get("payload", {})
+            if not isinstance(payload, dict):
+                payload = {}
+
+            if record.get("type") == "session_meta":
+                session_id = _as_string(payload.get("id") or session_id)
+            elif (
+                record.get("type") == "response_item"
+                and payload.get("type") == "message"
+                and not thread_name
+                and _as_string(payload.get("role")) == "user"
+            ):
+                thread_name = _flatten_message_content(payload.get("content"))
+            elif (
+                record.get("type") == "event_msg"
+                and payload.get("type") == "user_message"
+                and not thread_name
+            ):
+                thread_name = _as_string(payload.get("message") or payload.get("text"))
+            elif (
+                record.get("type") == "event_msg"
+                and payload.get("type") == "task_complete"
+            ):
+                complete = True
+                updated_at = _as_string(record.get("timestamp"))
+
+        if (
+            not session_id
+            or session_id in indexed_session_ids
+            or session_id in processed_ids
+        ):
+            continue
+        if not complete or not updated_at:
+            continue
+        try:
+            updated_dt = parse_iso8601(updated_at)
+        except ValueError:
+            continue
+        if updated_dt > quiet_cutoff:
+            continue
+        recovered.append(
+            {
+                "id": session_id,
+                "thread_name": thread_name or session_id,
+                "updated_at": updated_at,
+                "discovery_source": "recovered",
+                "index_present": False,
+                "session_file": str(session_file),
+            }
+        )
+    return recovered
+
+
+def collect_sessions_to_process(
+    *,
+    session_root: pathlib.Path,
+    index_rows: list[dict[str, Any]],
+    state: dict[str, Any],
+    now: datetime | None = None,
+    quiet_seconds: int = DEFAULT_QUIET_SECONDS,
+    recover_orphans: bool = True,
+) -> list[dict[str, Any]]:
+    selected = select_sessions_to_process(
+        index_rows=index_rows,
+        state=state,
+        now=now,
+        quiet_seconds=quiet_seconds,
+    )
+    merged: dict[str, dict[str, Any]] = {
+        str(row["id"]): {
+            **row,
+            "discovery_source": "index",
+            "index_present": True,
+        }
+        for row in selected
+    }
+    if recover_orphans:
+        indexed_session_ids = {
+            str(row.get("id", "")) for row in index_rows if row.get("id")
+        }
+        for row in recover_orphaned_sessions(
+            session_root=session_root,
+            indexed_session_ids=indexed_session_ids,
+            state=state,
+            now=now,
+            quiet_seconds=quiet_seconds,
+        ):
+            merged.setdefault(str(row["id"]), row)
+    return sorted(merged.values(), key=lambda row: str(row.get("updated_at", "")))
+
+
 def build_redactor(
     extra_patterns: list[str], enabled: bool = True
 ) -> Callable[[Any], Any]:
@@ -177,13 +320,134 @@ def _sanitize_path(path_value: str) -> str:
     return path_value
 
 
+def _load_tool_command(tool_call: dict[str, Any]) -> str:
+    if tool_call.get("name") != "exec_command":
+        return ""
+    arguments = tool_call.get("arguments")
+    if not isinstance(arguments, str):
+        return ""
+    try:
+        payload = json.loads(arguments)
+    except json.JSONDecodeError:
+        return arguments
+    if isinstance(payload, dict):
+        return _as_string(payload.get("cmd"))
+    return ""
+
+
+def _build_interactive_analysis(
+    *, messages: list[dict[str, Any]], tool_calls: list[dict[str, Any]], status: str
+) -> dict[str, Any]:
+    assistant_messages = [msg for msg in messages if msg.get("role") == "assistant"]
+    user_messages = [msg for msg in messages if msg.get("role") == "user"]
+    commentary_count = sum(1 for msg in messages if msg.get("phase") == "commentary")
+    invocation_calls = [
+        call for call in tool_calls if call.get("name") != "function_call_output"
+    ]
+    commands = [_load_tool_command(call) for call in invocation_calls]
+    commands = [cmd for cmd in commands if cmd]
+
+    def _contains_any(text: str, needles: list[str]) -> bool:
+        lowered = text.lower()
+        return any(needle in lowered for needle in needles)
+
+    def _safe_split(text: str) -> list[str]:
+        try:
+            return shlex.split(text)
+        except ValueError:
+            return []
+
+    user_correction_count = sum(
+        1
+        for msg in user_messages[1:]
+        if _contains_any(
+            _as_string(msg.get("content")),
+            ["actually", "you missed", "not quite", "no,", "don't", "didn't"],
+        )
+    )
+    clarification_question_count = sum(
+        1
+        for msg in assistant_messages
+        if "?" in _as_string(msg.get("content")) and msg.get("phase") != "commentary"
+    )
+    branch_created = any(
+        "git checkout -b" in cmd or "git switch -c" in cmd for cmd in commands
+    )
+    used_uv = any("uv " in cmd or cmd.startswith("uv") for cmd in commands)
+    ran_tests = any("pytest" in cmd or "unittest" in cmd for cmd in commands)
+    ran_lint = any(
+        "ruff check" in cmd or "lint" in _safe_split(cmd) for cmd in commands
+    )
+    ran_format = any(
+        "ruff format" in cmd or "format" in _safe_split(cmd) for cmd in commands
+    )
+    used_skills = any("SKILL.md" in _as_string(msg.get("content")) for msg in messages)
+    error_count = sum(
+        1
+        for msg in assistant_messages
+        if _contains_any(
+            _as_string(msg.get("content")), ["error", "failed", "exception"]
+        )
+    )
+
+    return {
+        "user_turn_count": len(user_messages),
+        "assistant_turn_count": len(assistant_messages),
+        "commentary_count": commentary_count,
+        "tool_call_count": len(invocation_calls),
+        "web_search_count": 0,
+        "error_count": error_count,
+        "task_completed": status == "complete",
+        "branch_created": branch_created,
+        "used_uv": used_uv,
+        "ran_tests": ran_tests,
+        "ran_lint": ran_lint,
+        "ran_format": ran_format,
+        "used_skills": used_skills,
+        "clarification_question_count": clarification_question_count,
+        "user_correction_count": user_correction_count,
+    }
+
+
+def _build_analysis_summary(
+    *, thread_name: str, messages: list[dict[str, Any]], analysis: dict[str, Any]
+) -> str:
+    first_user = next(
+        (
+            _as_string(msg.get("content"))
+            for msg in messages
+            if msg.get("role") == "user"
+        ),
+        "",
+    )
+    last_assistant = next(
+        (
+            _as_string(msg.get("content"))
+            for msg in reversed(messages)
+            if msg.get("role") == "assistant"
+        ),
+        "",
+    )
+    return (
+        f"Thread: {thread_name}\n"
+        f"User request: {first_user}\n"
+        f"Completed: {analysis['task_completed']}\n"
+        f"Tool calls: {analysis['tool_call_count']}\n"
+        f"Workflow: branch={analysis['branch_created']} uv={analysis['used_uv']} tests={analysis['ran_tests']}\n"
+        f"User corrections: {analysis['user_correction_count']}\n"
+        f"Final assistant message: {last_assistant}"
+    )
+
+
 def build_interactive_trace(
     *,
     session_file: pathlib.Path,
     thread_name: str,
     redactor: Callable[[Any], Any],
     redaction_enabled: bool = True,
+    discovery_metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    safe_thread_name = _as_string(redactor(thread_name))
     messages: list[dict[str, Any]] = []
     tool_calls: list[dict[str, Any]] = []
     session_meta: dict[str, Any] = {}
@@ -257,6 +521,8 @@ def build_interactive_trace(
                         }
             elif payload_type in {"user_message", "agent_message"}:
                 maybe_text = payload.get("text")
+                if maybe_text is None:
+                    maybe_text = payload.get("message")
                 if maybe_text is not None:
                     messages.append(
                         {
@@ -265,7 +531,7 @@ def build_interactive_trace(
                             if payload_type == "user_message"
                             else "assistant",
                             "content": redactor(_as_string(maybe_text)),
-                            "phase": "",
+                            "phase": _as_string(payload.get("phase")),
                             "source": "event_msg",
                         }
                     )
@@ -275,11 +541,16 @@ def build_interactive_trace(
     status = "complete" if complete else "partial"
     if malformed_lines > 0 and not messages and not tool_calls:
         status = "parse_error"
+    analysis = _build_interactive_analysis(
+        messages=messages,
+        tool_calls=tool_calls,
+        status=status,
+    )
 
     return {
         "source": "codex_interactive",
         "session_id": _as_string(session_meta.get("id") or session_file.stem),
-        "thread_name": thread_name,
+        "thread_name": safe_thread_name,
         "cwd": _sanitize_path(redactor(_as_string(session_meta.get("cwd")))),
         "cli_version": _as_string(session_meta.get("cli_version")),
         "started_at": _as_string(session_meta.get("timestamp")),
@@ -287,11 +558,18 @@ def build_interactive_trace(
         "messages": messages,
         "tool_calls": tool_calls,
         "token_usage": token_usage,
+        "analysis": analysis,
+        "analysis_summary": _build_analysis_summary(
+            thread_name=safe_thread_name,
+            messages=messages,
+            analysis=analysis,
+        ),
         "ingest_metadata": {
             "parser_version": PARSER_VERSION,
             "redaction_enabled": redaction_enabled,
             "session_file": _sanitize_path(redactor(str(session_file))),
             "malformed_lines": malformed_lines,
+            **(discovery_metadata or {}),
         },
     }
 
@@ -375,6 +653,11 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Disable redaction (not recommended)",
     )
+    parser.add_argument(
+        "--no-recover-orphans",
+        action="store_true",
+        help="Disable fallback scanning for completed session files missing from the index",
+    )
     return parser
 
 
@@ -386,6 +669,7 @@ def _run_sync_once(
     quiet_seconds: int,
     redactor: Callable[[Any], Any],
     redaction_enabled: bool,
+    recover_orphans: bool = True,
 ) -> dict[str, Any]:
     index_rows = load_session_index(index_file)
     state = load_sync_state(state_file)
@@ -404,10 +688,12 @@ def _run_sync_once(
             "skipped_missing": 0,
             "state_file": str(state_file),
         }
-    selected_rows = select_sessions_to_process(
+    selected_rows = collect_sessions_to_process(
+        session_root=session_root,
         index_rows=index_rows,
         state=state,
         quiet_seconds=quiet_seconds,
+        recover_orphans=recover_orphans,
     )
 
     @weave.op()
@@ -422,7 +708,11 @@ def _run_sync_once(
 
     for row in selected_rows:
         session_id = str(row["id"])
-        session_file = find_session_file(session_root, session_id)
+        session_file = (
+            pathlib.Path(str(row["session_file"])).resolve()
+            if row.get("session_file")
+            else find_session_file(session_root, session_id)
+        )
         if not session_file:
             skipped_missing += 1
             logger.warning(
@@ -437,6 +727,10 @@ def _run_sync_once(
             thread_name=str(row.get("thread_name", "")),
             redactor=redactor,
             redaction_enabled=redaction_enabled,
+            discovery_metadata={
+                "discovery_source": str(row.get("discovery_source", "index")),
+                "index_present": bool(row.get("index_present", True)),
+            },
         )
         ingest_interactive_session_traced(trace_payload)
         uploaded += 1
@@ -477,6 +771,7 @@ def main(argv: list[str] | None = None) -> int:
                 quiet_seconds=args.quiet_seconds,
                 redactor=redactor,
                 redaction_enabled=not args.no_redaction,
+                recover_orphans=not args.no_recover_orphans,
             )
             print(json.dumps(summary, ensure_ascii=True))
             return 0
@@ -489,6 +784,7 @@ def main(argv: list[str] | None = None) -> int:
                 quiet_seconds=args.quiet_seconds,
                 redactor=redactor,
                 redaction_enabled=not args.no_redaction,
+                recover_orphans=not args.no_recover_orphans,
             )
             print(json.dumps(summary, ensure_ascii=True))
             time.sleep(max(1, args.poll_seconds))

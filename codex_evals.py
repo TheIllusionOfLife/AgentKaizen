@@ -43,11 +43,64 @@ def load_variant_file(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def apply_variant_edits(workspace: Path, variant: dict[str, Any]) -> None:
+def _variant_file_edits(variant: dict[str, Any]) -> list[dict[str, Any]]:
+    file_edits = variant.get("file_edits")
+    if "file_edits" in variant:
+        if not isinstance(file_edits, list):
+            raise TypeError("variant.file_edits must be a list")
+        return file_edits
     edits = variant.get("edits", [])
+    normalized: list[dict[str, Any]] = []
+    for edit in edits:
+        normalized.append({"source_scope": "repo", **edit})
+    return normalized
+
+
+def materialize_external_variant_inputs(
+    workspace: Path, variant: dict[str, Any]
+) -> dict[str, Path]:
+    external_files = variant.get("external_files", [])
+    mapping: dict[str, Path] = {}
+    workspace_resolved = workspace.resolve()
+    for item in external_files:
+        source = Path(item["source"]).expanduser().resolve()
+        target_rel = Path(item["target"])
+        if target_rel.is_absolute():
+            raise ValueError(f"External target path must be relative: {target_rel}")
+        target = (workspace_resolved / target_rel).resolve()
+        if not target.is_relative_to(workspace_resolved):
+            raise ValueError(f"External target path escapes workspace: {target_rel}")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+        mapping[str(source)] = target_rel
+    return mapping
+
+
+def apply_variant_edits(
+    workspace: Path,
+    variant: dict[str, Any],
+    *,
+    external_path_map: dict[str, Path] | None = None,
+) -> None:
+    edits = _variant_file_edits(variant)
     workspace_resolved = workspace.resolve()
     for edit in edits:
-        rel_path = Path(edit["path"])
+        source_scope = str(edit.get("source_scope", "repo"))
+        if source_scope == "external":
+            if external_path_map is None:
+                raise ValueError("External edits require an external_path_map.")
+            mapped_path = external_path_map.get(
+                str(Path(edit["path"]).expanduser().resolve())
+            )
+            if mapped_path is None:
+                raise ValueError(
+                    f"External edit target not materialized: {edit['path']}"
+                )
+            rel_path = mapped_path
+        elif source_scope == "repo":
+            rel_path = Path(edit["path"])
+        else:
+            raise ValueError(f"Unsupported source_scope: {source_scope}")
         mode = edit["mode"]
         text = edit["text"]
         if rel_path.is_absolute():
@@ -70,6 +123,29 @@ def apply_variant_edits(workspace: Path, variant: dict[str, Any]) -> None:
             raise ValueError(f"Unsupported edit mode: {mode}")
 
         target.write_text(updated, encoding="utf-8")
+
+
+def resolve_variant_codex_config(
+    *, variant: dict[str, Any], cli_args: dict[str, Any]
+) -> dict[str, Any]:
+    variant_config = variant.get("codex_config", {})
+    if not isinstance(variant_config, dict):
+        variant_config = {}
+    raw_codex_args = variant_config.get("codex_args", cli_args.get("codex_args", []))
+    if raw_codex_args is None:
+        codex_args: list[str] = []
+    elif not isinstance(raw_codex_args, list) or not all(
+        isinstance(arg, str) for arg in raw_codex_args
+    ):
+        raise ValueError("codex_config.codex_args must be a list of strings")
+    else:
+        codex_args = list(raw_codex_args)
+    return {
+        "model": variant_config.get("model", cli_args.get("model")),
+        "sandbox": variant_config.get("sandbox", cli_args.get("sandbox")),
+        "profile": variant_config.get("profile", cli_args.get("profile")),
+        "codex_args": codex_args,
+    }
 
 
 def copy_workspace(src_root: Path, dst_root: Path) -> None:
@@ -453,14 +529,30 @@ def main(argv: list[str] | None = None) -> int:
         with tempfile.TemporaryDirectory(prefix="codex-eval-") as td:
             temp_workspace = Path(td) / "workspace"
             copy_workspace(repo_root, temp_workspace)
-            apply_variant_edits(temp_workspace, variant)
+            external_path_map = materialize_external_variant_inputs(
+                temp_workspace, variant
+            )
+            apply_variant_edits(
+                temp_workspace,
+                variant,
+                external_path_map=external_path_map,
+            )
+            resolved_config = resolve_variant_codex_config(
+                variant=variant,
+                cli_args={
+                    "model": args.model,
+                    "sandbox": args.sandbox,
+                    "profile": args.profile,
+                    "codex_args": args.codex_arg,
+                },
+            )
 
             model = CodexVariantModel(
                 workspace=str(temp_workspace),
-                codex_model=args.model,
-                sandbox=args.sandbox,
-                profile=args.profile,
-                codex_args=args.codex_arg,
+                codex_model=resolved_config["model"],
+                sandbox=resolved_config["sandbox"],
+                profile=resolved_config["profile"],
+                codex_args=resolved_config["codex_args"],
                 timeout_seconds=args.timeout_seconds,
             )
             evaluation = weave.Evaluation(

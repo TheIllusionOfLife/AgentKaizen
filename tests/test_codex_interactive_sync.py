@@ -293,3 +293,279 @@ def test_main_missing_wandb_api_key_writes_stderr(monkeypatch, capsys):
     assert rc == 2
     assert "WANDB_API_KEY" in out.err
     assert out.out == ""
+
+
+def test_recover_orphaned_sessions_returns_completed_session_not_in_index(tmp_path):
+    session_root = tmp_path / "sessions"
+    session_dir = session_root / "2026" / "03" / "06"
+    session_dir.mkdir(parents=True)
+    session_id = "019cc148-d4d9-71c3-80e7-5b741ebab085"
+    session_file = session_dir / f"rollout-2026-03-06T00-00-00-{session_id}.jsonl"
+    session_file.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "timestamp": "2026-03-06T03:55:33.497Z",
+                        "type": "session_meta",
+                        "payload": {
+                            "id": session_id,
+                            "timestamp": "2026-03-06T03:55:01.728Z",
+                        },
+                    }
+                ),
+                json.dumps(
+                    {
+                        "timestamp": "2026-03-06T03:55:34.000Z",
+                        "type": "response_item",
+                        "payload": {
+                            "type": "message",
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "input_text",
+                                    "text": "is gpt-5.4 better than gpt-codex-5.3 for coding?",
+                                }
+                            ],
+                        },
+                    }
+                ),
+                json.dumps(
+                    {
+                        "timestamp": "2026-03-06T03:58:22.145Z",
+                        "type": "event_msg",
+                        "payload": {"type": "task_complete"},
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    rows = codex_interactive_sync.recover_orphaned_sessions(
+        session_root=session_root,
+        indexed_session_ids=set(),
+        state={"processed_session_ids": []},
+        now=datetime(2026, 3, 6, 4, 0, 0, tzinfo=UTC),
+        quiet_seconds=0,
+    )
+
+    assert rows == [
+        {
+            "id": session_id,
+            "thread_name": "is gpt-5.4 better than gpt-codex-5.3 for coding?",
+            "updated_at": "2026-03-06T03:58:22.145Z",
+            "discovery_source": "recovered",
+            "index_present": False,
+            "session_file": str(session_file),
+        }
+    ]
+
+
+def test_collect_sessions_to_process_dedupes_index_and_recovered_rows(tmp_path):
+    session_root = tmp_path / "sessions"
+    session_dir = session_root / "2026" / "03" / "06"
+    session_dir.mkdir(parents=True)
+    session_id = "s1"
+    session_file = session_dir / f"rollout-2026-03-06T00-00-00-{session_id}.jsonl"
+    session_file.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "timestamp": "2026-03-06T01:00:00Z",
+                        "type": "session_meta",
+                        "payload": {
+                            "id": session_id,
+                            "timestamp": "2026-03-06T01:00:00Z",
+                        },
+                    }
+                ),
+                json.dumps(
+                    {
+                        "timestamp": "2026-03-06T01:01:00Z",
+                        "type": "event_msg",
+                        "payload": {"type": "task_complete"},
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    selected = codex_interactive_sync.collect_sessions_to_process(
+        session_root=session_root,
+        index_rows=[
+            {
+                "id": session_id,
+                "thread_name": "from-index",
+                "updated_at": "2026-03-06T01:01:00Z",
+            }
+        ],
+        state={"processed_session_ids": []},
+        now=datetime(2026, 3, 6, 2, 0, 0, tzinfo=UTC),
+        quiet_seconds=0,
+    )
+
+    assert len(selected) == 1
+    assert selected[0]["id"] == session_id
+    assert selected[0]["thread_name"] == "from-index"
+
+
+def test_build_interactive_trace_adds_analysis_fields(tmp_path):
+    session_file = tmp_path / "rollout.jsonl"
+    session_file.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "timestamp": "2026-03-06T00:00:00Z",
+                        "type": "session_meta",
+                        "payload": {
+                            "id": "abc",
+                            "cwd": "/repo",
+                            "cli_version": "0.110.0",
+                            "timestamp": "2026-03-06T00:00:00Z",
+                        },
+                    }
+                ),
+                json.dumps(
+                    {
+                        "timestamp": "2026-03-06T00:00:01Z",
+                        "type": "response_item",
+                        "payload": {
+                            "type": "message",
+                            "role": "user",
+                            "content": [
+                                {"type": "input_text", "text": "please fix this bug"}
+                            ],
+                        },
+                    }
+                ),
+                json.dumps(
+                    {
+                        "timestamp": "2026-03-06T00:00:02Z",
+                        "type": "event_msg",
+                        "payload": {
+                            "type": "agent_message",
+                            "message": "I am checking tests and will create a branch.",
+                            "phase": "commentary",
+                        },
+                    }
+                ),
+                json.dumps(
+                    {
+                        "timestamp": "2026-03-06T00:00:03Z",
+                        "type": "response_item",
+                        "payload": {
+                            "type": "function_call",
+                            "name": "exec_command",
+                            "call_id": "call-1",
+                            "arguments": json.dumps(
+                                {"cmd": "git checkout -b fix/demo"}
+                            ),
+                        },
+                    }
+                ),
+                json.dumps(
+                    {
+                        "timestamp": "2026-03-06T00:00:04Z",
+                        "type": "response_item",
+                        "payload": {
+                            "type": "function_call",
+                            "name": "exec_command",
+                            "call_id": "call-2",
+                            "arguments": json.dumps({"cmd": "uv run pytest"}),
+                        },
+                    }
+                ),
+                json.dumps(
+                    {
+                        "timestamp": "2026-03-06T00:00:05Z",
+                        "type": "event_msg",
+                        "payload": {"type": "task_complete"},
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    trace = codex_interactive_sync.build_interactive_trace(
+        session_file=session_file,
+        thread_name="demo",
+        redactor=codex_interactive_sync.build_redactor([]),
+    )
+
+    analysis = trace["analysis"]
+    assert analysis["user_turn_count"] == 1
+    assert analysis["assistant_turn_count"] == 1
+    assert analysis["commentary_count"] == 1
+    assert analysis["tool_call_count"] == 2
+    assert analysis["branch_created"] is True
+    assert analysis["used_uv"] is True
+    assert analysis["ran_tests"] is True
+    assert analysis["task_completed"] is True
+    assert "please fix this bug" in trace["analysis_summary"]
+
+
+def test_build_interactive_trace_redacts_thread_name(tmp_path):
+    session_file = tmp_path / "rollout.jsonl"
+    session_file.write_text(
+        json.dumps(
+            {
+                "timestamp": "2026-03-06T00:00:00Z",
+                "type": "session_meta",
+                "payload": {
+                    "id": "abc",
+                    "cwd": "/repo",
+                    "cli_version": "0.110.0",
+                    "timestamp": "2026-03-06T00:00:00Z",
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    trace = codex_interactive_sync.build_interactive_trace(
+        session_file=session_file,
+        thread_name="Contact me at user@example.com",
+        redactor=codex_interactive_sync.build_redactor([]),
+    )
+
+    assert "user@example.com" not in trace["thread_name"]
+    assert "[REDACTED]" in trace["thread_name"]
+    assert "user@example.com" not in trace["analysis_summary"]
+
+
+def test_build_interactive_analysis_counts_only_invocations():
+    analysis = codex_interactive_sync._build_interactive_analysis(
+        messages=[],
+        tool_calls=[
+            {"name": "exec_command", "arguments": json.dumps({"cmd": "uv run pytest"})},
+            {"name": "function_call_output", "output": "ok"},
+        ],
+        status="complete",
+    )
+
+    assert analysis["tool_call_count"] == 1
+
+
+def test_build_interactive_analysis_handles_invalid_shell_syntax():
+    analysis = codex_interactive_sync._build_interactive_analysis(
+        messages=[],
+        tool_calls=[
+            {
+                "name": "exec_command",
+                "arguments": json.dumps({"cmd": 'python -c "unterminated'}),
+            }
+        ],
+        status="complete",
+    )
+
+    assert analysis["ran_lint"] is False
+    assert analysis["ran_format"] is False

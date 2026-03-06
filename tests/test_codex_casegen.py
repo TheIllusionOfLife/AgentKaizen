@@ -87,3 +87,91 @@ def test_main_missing_wandb_api_key_writes_to_stderr(monkeypatch, capsys):
     assert rc == 2
     assert "WANDB_API_KEY" in out.err
     assert out.out == ""
+
+
+def test_build_case_from_interactive_trace():
+    trace = {
+        "thread_name": "How do I optimize AGENTS?",
+        "analysis_summary": "The user had to correct the agent twice.",
+    }
+
+    case = codex_casegen.build_case_from_interactive_trace(trace, max_chars_padding=20)
+
+    assert case["prompt"] == "How do I optimize AGENTS?"
+    assert case["source"] == "interactive"
+    assert case["max_chars"] >= len(trace["analysis_summary"])
+
+
+def test_fetch_recent_interactive_cases_dedupes_by_thread_name(monkeypatch):
+    calls = [
+        SimpleNamespace(
+            op_name="ingest_interactive_session_traced",
+            output={
+                "source": "codex_interactive",
+                "thread_name": "optimize AGENTS",
+                "analysis_summary": "The user corrected the agent once.",
+            },
+        ),
+        SimpleNamespace(
+            op_name="ingest_interactive_session_traced",
+            output={
+                "source": "codex_interactive",
+                "thread_name": "optimize AGENTS",
+                "analysis_summary": "duplicate",
+            },
+        ),
+    ]
+
+    class FakeClient:
+        def get_calls(self, **_kwargs):
+            return calls
+
+    monkeypatch.setattr(
+        codex_casegen.weave_client_context, "get_weave_client", lambda: FakeClient()
+    )
+
+    result = codex_casegen.fetch_recent_interactive_cases(
+        limit=5,
+        op_substring="ingest_interactive_session_traced",
+        max_chars_padding=5,
+        redact_patterns=[],
+    )
+
+    assert len(result) == 1
+    assert result[0]["prompt"] == "optimize AGENTS"
+
+
+def test_main_include_interactive_respects_limit(monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr(codex_casegen, "ensure_wandb_api_key", lambda: "x")
+    monkeypatch.setattr(
+        codex_casegen, "weave", SimpleNamespace(init=lambda *_args, **_kwargs: None)
+    )
+    monkeypatch.setattr(
+        codex_casegen,
+        "fetch_recent_codex_cases",
+        lambda **_kwargs: [
+            {"prompt": "p1", "must_contain": [], "must_not_contain": [], "max_chars": 1}
+        ],
+    )
+    monkeypatch.setattr(
+        codex_casegen,
+        "fetch_recent_interactive_cases",
+        lambda **_kwargs: [
+            {
+                "prompt": "p2",
+                "must_contain": [],
+                "must_not_contain": [],
+                "max_chars": 1,
+                "source": "interactive",
+            }
+        ],
+    )
+
+    output = tmp_path / "cases.jsonl"
+    rc = codex_casegen.main(
+        ["--limit", "1", "--include-interactive", "--output", str(output)]
+    )
+
+    assert rc == 0
+    rows = output.read_text(encoding="utf-8").splitlines()
+    assert len(rows) == 1
