@@ -12,6 +12,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    env:
+      WEAVE_PRINT_CALL_LINK: "false"
 
     steps:
       - name: Checkout

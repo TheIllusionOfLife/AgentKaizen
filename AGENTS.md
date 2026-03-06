@@ -18,6 +18,13 @@ Live Weave workflows require all of the following:
 
 Do not hardcode personal W&B entity or project values in code, docs, examples, or tests.
 
+Useful optional environment variables:
+- `WANDB_BASE_URL` for custom or self-hosted W&B deployments
+- `WEAVE_PARALLELISM` for tuning eval concurrency
+- `WEAVE_PRINT_CALL_LINK=false` for CI or other non-interactive runs
+- `WEAVE_LOG_LEVEL` when debugging Weave integration behavior
+- `WEAVE_DISABLED=true` for local runs where tracing should be bypassed
+
 ## Commands You Should Use
 Use `uv` for all Python workflows.
 

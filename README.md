@@ -59,6 +59,13 @@ export WANDB_PROJECT=your-weave-project
 
 All commands in this repo require a W&B entity and project. If you do not want to set environment variables, pass `--entity` and `--project` explicitly on each command.
 
+Useful optional Weave environment variables:
+- `WANDB_BASE_URL`: use a custom or self-hosted W&B base URL
+- `WEAVE_PARALLELISM`: tune eval concurrency for larger `codex-eval` runs
+- `WEAVE_PRINT_CALL_LINK=false`: suppress noisy call-link output in scripted or CI environments
+- `WEAVE_LOG_LEVEL`: increase logging when debugging Weave integration issues
+- `WEAVE_DISABLED=true`: disable Weave tracing entirely for local dry runs or troubleshooting
+
 ### Install
 ```bash
 uv venv .venv
@@ -223,3 +230,6 @@ uv run --group dev pytest
 uv run --with ruff ruff check .
 uv run --with ruff ruff format --check .
 ```
+
+For more on supported Weave environment variables, see:
+- https://docs.wandb.ai/weave/guides/core-types/env-vars

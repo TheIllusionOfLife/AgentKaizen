@@ -15,6 +15,13 @@
   - `WANDB_ENTITY`
   - `WANDB_PROJECT`
 
+Useful optional Weave and W&B environment variables:
+- `WANDB_BASE_URL`
+- `WEAVE_PARALLELISM`
+- `WEAVE_PRINT_CALL_LINK`
+- `WEAVE_LOG_LEVEL`
+- `WEAVE_DISABLED`
+
 ## Key Technical Choices
 - Single-file top-level modules keep each CLI entry point easy to inspect
 - `weave.op()` is used to capture traced operations
@@ -50,6 +57,13 @@ The project currently performs custom pre-upload redaction for interactive trace
 - session-specific instruction boilerplate
 
 Weave's built-in PII redaction could still be added later, but it would be additive rather than a complete replacement.
+
+### Operational environment variables
+This project currently relies on environment variables for operational Weave behavior instead of hardcoded runtime settings. That is usually the right fit for:
+- CI-friendly output suppression with `WEAVE_PRINT_CALL_LINK=false`
+- eval concurrency tuning with `WEAVE_PARALLELISM`
+- alternate W&B hosts through `WANDB_BASE_URL`
+- temporary local tracing disablement through `WEAVE_DISABLED=true`
 
 ## Constraints
 - The repo is designed around Codex CLI output and local Codex session files
