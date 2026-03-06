@@ -39,8 +39,11 @@ Current scorers:
 - schema-aware JSON validation
 - required section presence
 - file path citation presence
-- semantic similarity against a reference answer
 - token usage extraction
+
+Built-in Weave scorers depend on optional case fields:
+- `response_schema` enables built-in JSON/schema validation
+- datasets that do not include those fields should still run with the deterministic scorers only
 
 These scorers are useful for:
 - formatting and contract checks
@@ -105,6 +108,11 @@ The flow is:
 9. Fail candidates when quality is similar but latency or token usage regress beyond configured thresholds
 
 This makes document and config tuning measurable and comparable.
+
+For language and style experiments such as "respond in Japanese" or "be more concise", prefer:
+- `max_chars` when brevity matters
+- exact-match control prompts to catch over-application of the steering change
+- curated prompt suites with deterministic checks rather than external-API-backed semantic scorers
 
 ## Interactive Scoring
 Interactive scoring has two layers.

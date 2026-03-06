@@ -41,6 +41,13 @@ DEFAULT_PII_REDACTION_FIELDS = [
     "thread_name",
 ]
 
+SUPPORTED_WANDB_ENV_KEYS = [
+    "WANDB_API_KEY",
+    "WANDB_ENTITY",
+    "WANDB_PROJECT",
+    "WANDB_BASE_URL",
+]
+
 
 def parse_codex_jsonl(lines: Iterable[str]) -> ParsedEvents:
     events: list[dict[str, object]] = []
@@ -231,38 +238,72 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def load_wandb_api_key_from_env_file(path: pathlib.Path) -> str | None:
+def load_wandb_env_from_env_file(path: pathlib.Path) -> dict[str, str]:
     if not path.exists():
-        return None
+        return {}
 
+    loaded: dict[str, str] = {}
     for raw_line in path.read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
         key, value = line.split("=", 1)
-        if key.strip() == "WANDB_API_KEY":
-            return value.strip().strip("'").strip('"')
-    return None
+        normalized_key = key.strip()
+        if normalized_key in SUPPORTED_WANDB_ENV_KEYS:
+            loaded[normalized_key] = value.strip().strip("'").strip('"')
+    return loaded
+
+
+def load_wandb_api_key_from_env_file(path: pathlib.Path) -> str | None:
+    return load_wandb_env_from_env_file(path).get("WANDB_API_KEY")
+
+
+def ensure_wandb_env() -> dict[str, str]:
+    env_file_values = load_wandb_env_from_env_file(pathlib.Path(".env.local"))
+    resolved: dict[str, str] = {}
+    for key in SUPPORTED_WANDB_ENV_KEYS:
+        existing = os.environ.get(key)
+        if existing:
+            resolved[key] = existing
+            continue
+        env_value = env_file_values.get(key)
+        if env_value:
+            os.environ[key] = env_value
+            resolved[key] = env_value
+    return resolved
+
+
+def infer_wandb_entity() -> str | None:
+    try:
+        import wandb
+    except ImportError:
+        return None
+
+    try:
+        viewer = wandb.Api().viewer
+    except Exception:
+        return None
+
+    entity = getattr(viewer, "entity", None) or getattr(viewer, "username", None)
+    if not entity:
+        return None
+    return str(entity)
 
 
 def ensure_wandb_api_key() -> str | None:
-    existing = os.environ.get("WANDB_API_KEY")
-    if existing:
-        return existing
-
-    env_key = load_wandb_api_key_from_env_file(pathlib.Path(".env.local"))
-    if env_key:
-        os.environ["WANDB_API_KEY"] = env_key
-    return env_key
+    return ensure_wandb_env().get("WANDB_API_KEY")
 
 
 def resolve_weave_project(entity: str | None, project: str | None) -> str:
-    resolved_entity = entity or os.environ.get("WANDB_ENTITY")
+    ensure_wandb_env()
+    resolved_entity = entity or os.environ.get("WANDB_ENTITY") or infer_wandb_entity()
     resolved_project = project or os.environ.get("WANDB_PROJECT")
+    if resolved_entity and not os.environ.get("WANDB_ENTITY"):
+        os.environ["WANDB_ENTITY"] = resolved_entity
     if resolved_entity and resolved_project:
         return f"{resolved_entity}/{resolved_project}"
     raise ValueError(
-        "W&B entity and project are required. Pass --entity and --project, or set WANDB_ENTITY and WANDB_PROJECT."
+        "W&B project resolution requires WANDB_PROJECT and an entity. Pass --entity/--project, set WANDB_ENTITY/WANDB_PROJECT, or put them in .env.local. WANDB_ENTITY can be inferred from your logged-in W&B account, but WANDB_PROJECT must be set explicitly."
     )
 
 

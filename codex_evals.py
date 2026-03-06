@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import os
 import shutil
 import subprocess
 import sys
@@ -13,11 +12,7 @@ from typing import Any
 
 import weave
 from pydantic import BaseModel, ConfigDict, create_model
-from weave.scorers import (
-    EmbeddingSimilarityScorer,
-    PydanticScorer,
-    ValidJSONScorer,
-)
+from weave.scorers import PydanticScorer, ValidJSONScorer
 
 from codex_scoring import (
     score_contains_all,
@@ -41,6 +36,7 @@ class CaseLoadError(ValueError):
 
 
 _SCHEMA_MODEL_CACHE: dict[str, type[BaseModel]] = {}
+OPTIONAL_CASE_FIELDS = ("response_schema",)
 
 
 def load_cases_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -77,6 +73,14 @@ def load_cases_jsonl(path: Path) -> list[dict[str, Any]]:
             if "suite" not in row:
                 row["suite"] = case_path.stem
             rows.append(row)
+    present_optional_fields = {
+        field_name
+        for field_name in OPTIONAL_CASE_FIELDS
+        if any(field_name in row for row in rows)
+    }
+    for row in rows:
+        for field_name in present_optional_fields:
+            row.setdefault(field_name, None)
     return rows
 
 
@@ -329,48 +333,13 @@ class BuiltinPydanticCaseScorer(weave.Scorer):
         }
 
 
-class BuiltinEmbeddingSimilarityCaseScorer(weave.Scorer):
-    name: str = "builtin_embedding_similarity"
-    column_map: dict[str, str] | None = {"reference_output": "reference_output"}
-    threshold: float = 0.8
-
-    @weave.op()
-    async def score(
-        self,
-        *,
-        output: str | dict[str, Any],
-        reference_output: str | None = None,
-    ) -> dict[str, Any]:
-        if not reference_output:
-            return {
-                "pass": True,
-                "applicable": False,
-                "similarity_score": None,
-                "is_similar": None,
-            }
-        if not os.environ.get("OPENAI_API_KEY"):
-            return {
-                "pass": True,
-                "applicable": False,
-                "similarity_score": None,
-                "is_similar": None,
-                "skipped_reason": "missing_openai_api_key",
-            }
-        result = await EmbeddingSimilarityScorer(threshold=self.threshold).score(
-            output=_extract_output_text(output), target=reference_output
-        )
-        is_similar = bool(result.get("is_similar"))
-        similarity_score = result.get("similarity_score")
-        return {
-            "pass": is_similar,
-            "applicable": True,
-            "similarity_score": similarity_score,
-            "is_similar": is_similar,
-        }
+def _dataset_has_field(cases: list[dict[str, Any]], field_name: str) -> bool:
+    return any(field_name in case for case in cases)
 
 
-def build_eval_scorers() -> list[Any]:
-    return [
+def build_eval_scorers(cases: list[dict[str, Any]] | None = None) -> list[Any]:
+    dataset = cases or []
+    scorers: list[Any] = [
         contains_all_scorer,
         forbidden_absent_scorer,
         exact_match_scorer,
@@ -378,11 +347,16 @@ def build_eval_scorers() -> list[Any]:
         json_validity_scorer,
         required_sections_scorer,
         file_path_citations_scorer,
-        BuiltinValidJSONCaseScorer(),
-        BuiltinPydanticCaseScorer(),
-        BuiltinEmbeddingSimilarityCaseScorer(),
         token_usage_scorer,
     ]
+    if _dataset_has_field(dataset, "response_schema"):
+        scorers.extend(
+            [
+                BuiltinValidJSONCaseScorer(),
+                BuiltinPydanticCaseScorer(),
+            ]
+        )
+    return scorers
 
 
 def normalize_codex_args(codex_args: list[str]) -> list[str]:
@@ -680,15 +654,6 @@ def _active_quality_keys(summary: dict[str, Any]) -> list[str]:
     if builtin_pydantic_fraction > 0.0:
         keys.append("builtin_pydantic")
 
-    builtin_similarity_fraction = float(
-        summary.get("builtin_embedding_similarity", {})
-        .get("applicable", {})
-        .get("true_fraction", 0.0)
-        or 0.0
-    )
-    if builtin_similarity_fraction > 0.0:
-        keys.append("builtin_embedding_similarity")
-
     return keys
 
 
@@ -783,7 +748,6 @@ def render_ranked_summary_table(ranked: list[dict[str, Any]]) -> str:
                 f"   schema_pass: {_extract_true_fraction(summary, 'builtin_pydantic'):.3f}",
                 f"   sections_pass: {_extract_true_fraction(summary, 'score_required_sections'):.3f}",
                 f"   file_paths_pass: {_extract_true_fraction(summary, 'score_file_path_citations'):.3f}",
-                f"   semantic_pass: {_extract_true_fraction(summary, 'builtin_embedding_similarity'):.3f}",
                 f"   latency_mean: {item['latency_mean'] if item['latency_mean'] is not None else 'n/a'}",
                 f"   total_tokens_mean: {item['token_mean'] if item['token_mean'] is not None else 'n/a'}",
                 f"   gate_pass: {item['gate_pass']}",
@@ -850,7 +814,7 @@ def main(argv: list[str] | None = None) -> int:
             evaluation = weave.Evaluation(
                 name=f"codex-doc-impact-{variant['name']}",
                 dataset=cases,
-                scorers=build_eval_scorers(),
+                scorers=build_eval_scorers(cases),
             )
             result = asyncio.run(evaluation.evaluate(model))
             item = {"variant": variant["name"], "summary": result}
