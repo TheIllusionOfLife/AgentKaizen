@@ -104,12 +104,20 @@ def test_merge_interactive_scores_combines_heuristics_and_judge():
             "efficiency": 0.6,
             "optimization_relevance": "config",
             "reasoning": "The task succeeded but configuration could reduce extra steps.",
+            "scorer_backend": "subagent",
+            "derived_user_task": "demo task",
+            "friction_signals": ["high_corrections"],
+            "workflow_failures": ["missing_branch"],
+            "recommended_changes": ["Strengthen AGENTS.md workflow instructions."],
         },
     )
 
     assert result["task_success"] == 0.9
     assert result["optimization_relevance"] == "config"
     assert result["workflow_compliance"] == 0.7
+    assert result["scorer_backend"] == "subagent"
+    assert result["derived_user_task"] == "demo task"
+    assert result["friction_signals"] == ["high_corrections"]
 
 
 def test_main_missing_wandb_api_key_writes_stderr(monkeypatch, capsys):
@@ -134,6 +142,153 @@ def test_build_judge_prompt_wraps_untrusted_trace_data_as_json():
     assert "untrusted session data" in prompt.lower()
     assert '"user_task": "Summarize the live demo result"' in prompt
     assert '"thread_name":' not in prompt
+
+
+def test_run_subagent_analysis_returns_structured_recommendations():
+    result = codex_interactive_scoring.run_subagent_analysis(
+        {
+            "thread_name": "demo",
+            "user_task": "Improve AGENTS.md so live demos read docs first",
+            "analysis_summary": "The user corrected the agent repeatedly.",
+            "analysis": {
+                "task_completed": True,
+                "branch_created": False,
+                "used_uv": True,
+                "ran_tests": False,
+                "tool_call_count": 12,
+                "user_correction_count": 3,
+                "clarification_question_count": 1,
+            },
+        }
+    )
+
+    assert result["scorer_backend"] == "subagent"
+    assert result["optimization_relevance"] == "agents"
+    assert result["derived_user_task"] == "Improve AGENTS.md so live demos read docs first"
+    assert "high_corrections" in result["friction_signals"]
+    assert result["recommended_changes"]
+
+
+def test_score_interactive_trace_payload_defaults_to_subagent(monkeypatch):
+    monkeypatch.setattr(
+        codex_interactive_scoring,
+        "run_subagent_analysis",
+        lambda *_args, **_kwargs: {
+            "task_success": 0.9,
+            "user_friction": 0.2,
+            "workflow_compliance": 0.8,
+            "efficiency": 0.7,
+            "optimization_relevance": "agents",
+            "reasoning": "Structured analysis.",
+            "scorer_backend": "subagent",
+            "derived_user_task": "demo task",
+            "friction_signals": ["high_corrections"],
+            "workflow_failures": [],
+            "recommended_changes": ["Update AGENTS.md."],
+        },
+    )
+    monkeypatch.setattr(
+        codex_interactive_scoring,
+        "run_codex_judge",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("external judge should not run in default mode")
+        ),
+    )
+
+    result = codex_interactive_scoring.score_interactive_trace_payload(
+        {
+            "thread_name": "demo",
+            "analysis": {
+                "task_completed": True,
+                "branch_created": True,
+                "used_uv": True,
+                "ran_tests": True,
+                "tool_call_count": 3,
+                "user_correction_count": 0,
+                "clarification_question_count": 0,
+            },
+        }
+    )
+
+    assert result["scorer_backend"] == "subagent"
+    assert result["optimization_relevance"] == "agents"
+
+
+def test_score_interactive_trace_payload_external_backend_falls_back(monkeypatch):
+    monkeypatch.setattr(
+        codex_interactive_scoring,
+        "run_codex_judge",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            codex_interactive_scoring.JudgeResponseError("bad judge", raw_output="x")
+        ),
+    )
+
+    result = codex_interactive_scoring.score_interactive_trace_payload(
+        {
+            "thread_name": "demo",
+            "analysis": {
+                "task_completed": True,
+                "branch_created": True,
+                "used_uv": True,
+                "ran_tests": True,
+                "tool_call_count": 3,
+                "user_correction_count": 0,
+                "clarification_question_count": 0,
+            },
+        },
+        scoring_backend="external",
+    )
+
+    assert result["judge_status"] == "fallback"
+    assert result["scorer_backend"] == "external"
+
+
+def test_main_uses_context_manager_and_subagent_backend(monkeypatch, tmp_path, capsys):
+    trace_file = tmp_path / "trace.json"
+    trace_file.write_text(
+        json.dumps(
+            {
+                "thread_name": "demo",
+                "analysis": {
+                    "task_completed": True,
+                    "branch_created": True,
+                    "used_uv": True,
+                    "ran_tests": True,
+                    "tool_call_count": 3,
+                    "user_correction_count": 0,
+                    "clarification_question_count": 0,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(codex_interactive_scoring, "ensure_wandb_api_key", lambda: "x")
+    monkeypatch.setattr(
+        codex_interactive_scoring, "weave", type("Weave", (), {"init": lambda *_a, **_k: None, "op": lambda *_a, **_k: (lambda fn: fn)})()
+    )
+    monkeypatch.setattr(
+        codex_interactive_scoring,
+        "run_subagent_analysis",
+        lambda *_args, **_kwargs: {
+            "task_success": 1.0,
+            "user_friction": 0.0,
+            "workflow_compliance": 1.0,
+            "efficiency": 1.0,
+            "optimization_relevance": "none",
+            "reasoning": "",
+            "scorer_backend": "subagent",
+            "derived_user_task": "demo",
+            "friction_signals": [],
+            "workflow_failures": [],
+            "recommended_changes": [],
+        },
+    )
+
+    rc = codex_interactive_scoring.main(["--trace-file", str(trace_file)])
+    out = capsys.readouterr()
+
+    assert rc == 0
+    assert '"scorer_backend": "subagent"' in out.out
 
 
 def test_build_judge_repair_prompt_treats_raw_response_as_data():
