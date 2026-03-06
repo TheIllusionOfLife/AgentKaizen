@@ -5,6 +5,7 @@ Track and improve Codex CLI behavior with W&B Weave.
 This repository provides:
 - `codex-weave`: run `codex exec` with trace logging and optional online guardrails.
 - `codex-eval`: run offline Weave Evals to compare baseline vs document variants (for example `AGENTS.md` changes).
+- `codex-weave-sync-interactive`: ingest interactive Codex TUI session files into Weave traces.
 
 ## Requirements
 - Python 3.12+
@@ -45,6 +46,24 @@ uv run codex-weave \
   --sandbox workspace-write \
   --profile default
 ```
+
+## Sync Interactive TUI Sessions
+Capture full interactive sessions (non-`exec`) from local Codex session files:
+
+```bash
+uv run codex-weave-sync-interactive --once
+```
+
+Continuous polling mode:
+```bash
+uv run codex-weave-sync-interactive \
+  --poll-seconds 15 \
+  --quiet-seconds 30
+```
+
+- Default source paths: `~/.codex/session_index.jsonl` and `~/.codex/sessions/`.
+- Checkpoint state: `~/.codex/weave_sync_state.json`.
+- Redaction is enabled by default; add `--no-redaction` to disable.
 
 ## Online Guardrails
 Guardrails are scored and attached to each trace.
