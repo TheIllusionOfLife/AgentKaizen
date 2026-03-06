@@ -37,7 +37,7 @@ def test_evaluate_output_violation_case():
 def test_structure_scorers_json_sections_and_paths():
     json_output = {"text": '{"a": 1}', "usage": {"input_tokens": 2, "output_tokens": 3}}
     doc_output = {
-        "text": "## Summary\nSee src/app.py",
+        "text": "## Summary\nSee src/app.py#L10",
         "usage": {"input_tokens": 2, "output_tokens": 3},
     }
 
@@ -70,6 +70,22 @@ def test_structure_scorers_fail_cases():
         codex_scoring.score_file_path_citations(output, require_file_paths=True)["pass"]
         is False
     )
+
+
+def test_required_sections_match_headings_not_substrings():
+    output = {"text": "Summary details without a heading", "usage": {}}
+
+    result = codex_scoring.score_required_sections(output, required_sections=["Summary"])
+
+    assert result["pass"] is False
+
+
+def test_file_path_citations_accept_line_anchors():
+    output = {"text": "See src/app.py#L12 for details", "usage": {}}
+
+    result = codex_scoring.score_file_path_citations(output, require_file_paths=True)
+
+    assert result["pass"] is True
 
 
 def test_score_token_usage_handles_invalid_values():

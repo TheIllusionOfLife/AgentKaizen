@@ -42,6 +42,24 @@ def test_load_cases_jsonl_reads_all_rows(tmp_path):
     assert rows[0]["prompt"] == "p1"
 
 
+def test_load_cases_jsonl_reads_directory_suites(tmp_path):
+    cases_dir = tmp_path / "cases"
+    cases_dir.mkdir()
+    (cases_dir / "core.jsonl").write_text(
+        json.dumps({"id": "core-1", "prompt": "p1", "suite": "core"}) + "\n",
+        encoding="utf-8",
+    )
+    (cases_dir / "workflow.jsonl").write_text(
+        json.dumps({"id": "workflow-1", "prompt": "p2", "suite": "workflow"}) + "\n",
+        encoding="utf-8",
+    )
+
+    rows = codex_evals.load_cases_jsonl(cases_dir)
+
+    assert [row["id"] for row in rows] == ["core-1", "workflow-1"]
+    assert [row["suite"] for row in rows] == ["core", "workflow"]
+
+
 def test_apply_variant_edits_append_prepend_replace(tmp_path):
     workspace = tmp_path / "workspace"
     workspace.mkdir()

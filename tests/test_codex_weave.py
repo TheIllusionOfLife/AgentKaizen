@@ -30,16 +30,26 @@ def _stdout(final_message: str, usage: dict[str, int] | None = None) -> str:
 @pytest.fixture
 def fake_weave(monkeypatch):
     class FakeWeave:
+        def __init__(self):
+            self.calls = []
+
         def init(self, _project):
             return None
 
         def op(self):
             def deco(fn):
-                return fn
+                def wrapped(*args, **kwargs):
+                    result = fn(*args, **kwargs)
+                    self.calls.append(result)
+                    return result
+
+                return wrapped
 
             return deco
 
-    monkeypatch.setattr(codex_weave, "weave", FakeWeave())
+    fake = FakeWeave()
+    monkeypatch.setattr(codex_weave, "weave", fake)
+    return fake
 
 
 @pytest.fixture
@@ -120,6 +130,7 @@ def test_build_codex_command_includes_passed_options():
         model="o3",
         sandbox="workspace-write",
         profile="default",
+        image_paths=["diagram.png"],
         codex_args=["--skip-git-repo-check"],
     )
 
@@ -127,7 +138,23 @@ def test_build_codex_command_includes_passed_options():
     assert "--model" in cmd
     assert "--sandbox" in cmd
     assert "--profile" in cmd
+    assert "--image" in cmd
     assert cmd[-1] == "hello"
+
+
+def test_build_prompt_content_preserves_text_and_images(tmp_path):
+    image_path = tmp_path / "diagram.png"
+    image_path.write_bytes(b"fake-image")
+
+    content = codex_weave.build_prompt_content(
+        prompt="Explain this image",
+        image_paths=[str(image_path)],
+    )
+
+    assert content == [
+        {"type": "input_text", "text": "Explain this image"},
+        {"type": "input_image", "image_path": str(image_path)},
+    ]
 
 
 def test_main_returns_error_when_wandb_api_key_missing(monkeypatch, capsys, tmp_path):
@@ -204,7 +231,6 @@ def test_main_reads_wandb_api_key_from_dotenv_local(
 def test_main_prints_final_message_and_propagates_exit(
     monkeypatch, capsys, fake_weave, fake_subprocess_run
 ):
-    del fake_weave
     monkeypatch.setenv("WANDB_API_KEY", "x")
     set_wandb_target_env(monkeypatch)
     fake_subprocess_run(final_message="ok", returncode=0)
@@ -214,6 +240,35 @@ def test_main_prints_final_message_and_propagates_exit(
     out = capsys.readouterr()
     assert rc == 0
     assert out.out.strip() == "ok"
+
+
+def test_main_traces_multimodal_prompt_content(
+    monkeypatch, capsys, tmp_path, fake_weave, fake_subprocess_run
+):
+    monkeypatch.setenv("WANDB_API_KEY", "x")
+    set_wandb_target_env(monkeypatch)
+    image_path = tmp_path / "diagram.png"
+    image_path.write_bytes(b"fake-image")
+    fake_subprocess_run(final_message="ok", returncode=0)
+
+    rc = codex_weave.main(
+        [
+            "--prompt",
+            "Explain this image",
+            "--image",
+            str(image_path),
+        ]
+    )
+
+    out = capsys.readouterr()
+    assert rc == 0
+    assert out.out.strip() == "ok"
+    assert fake_weave.calls[-1]["input_content"] == [
+        {"type": "input_text", "text": "Explain this image"},
+        {"type": "input_image", "image_path": str(image_path)},
+    ]
+    assert fake_weave.calls[-1]["modalities"] == ["text", "image"]
+    assert fake_weave.calls[-1]["prompt"] == "Explain this image"
 
 
 def test_main_guardrail_warn_does_not_fail_exit(
