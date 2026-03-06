@@ -1,6 +1,7 @@
 import json
 import pathlib
 import sys
+from datetime import UTC, datetime
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
@@ -158,6 +159,12 @@ def test_redaction_handles_quoted_api_key():
     assert "[REDACTED]" in redacted
 
 
+def test_redaction_extra_patterns_do_not_reemit_capture_groups():
+    redactor = codex_interactive_sync.build_redactor([r"(secret)-value"])
+    redacted = redactor("secret-value")
+    assert redacted == "[REDACTED]"
+
+
 def test_build_interactive_trace_sanitizes_path_fields(tmp_path):
     session_file = tmp_path / "rollout.jsonl"
     session_file.write_text(
@@ -210,9 +217,71 @@ def test_select_sessions_to_process_is_idempotent():
     selected = codex_interactive_sync.select_sessions_to_process(
         index_rows=index_rows,
         state=state,
+        now=datetime(2026, 3, 6, 3, 0, 0, tzinfo=UTC),
     )
 
     assert [row["id"] for row in selected] == ["s2"]
+
+
+def test_select_sessions_to_process_keeps_equal_timestamp_if_not_processed():
+    index_rows = [
+        {
+            "id": "s1",
+            "thread_name": "a",
+            "updated_at": "2026-03-06T01:00:00Z",
+        }
+    ]
+    state = {
+        "last_processed_updated_at": "2026-03-06T01:00:00Z",
+        "processed_session_ids": [],
+    }
+
+    selected = codex_interactive_sync.select_sessions_to_process(
+        index_rows=index_rows,
+        state=state,
+        now=datetime(2026, 3, 6, 2, 0, 0, tzinfo=UTC),
+    )
+
+    assert [row["id"] for row in selected] == ["s1"]
+
+
+def test_run_sync_once_bootstraps_state_without_backfill(monkeypatch, tmp_path):
+    index_file = tmp_path / "session_index.jsonl"
+    state_file = tmp_path / "state.json"
+    index_file.write_text(
+        json.dumps(
+            {
+                "id": "s1",
+                "thread_name": "demo",
+                "updated_at": "2026-03-06T05:00:00Z",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    class FakeWeave:
+        def op(self):
+            def deco(fn):
+                return fn
+
+            return deco
+
+    monkeypatch.setattr(codex_interactive_sync, "weave", FakeWeave())
+
+    summary = codex_interactive_sync._run_sync_once(
+        session_root=tmp_path / "sessions",
+        index_file=index_file,
+        state_file=state_file,
+        quiet_seconds=30,
+        redactor=codex_interactive_sync.build_redactor([]),
+        redaction_enabled=True,
+    )
+
+    saved_state = codex_interactive_sync.load_sync_state(state_file)
+    assert summary["selected"] == 0
+    assert summary["uploaded"] == 0
+    assert saved_state["last_processed_updated_at"] == "2026-03-06T05:00:00Z"
 
 
 def test_main_missing_wandb_api_key_writes_stderr(monkeypatch, capsys):

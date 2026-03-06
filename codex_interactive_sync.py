@@ -113,9 +113,9 @@ def select_sessions_to_process(
         updated_at = str(row.get("updated_at", ""))
         if not session_id or not updated_at:
             continue
-        if last_processed and updated_at <= str(last_processed):
-            continue
         if session_id in processed_ids:
+            continue
+        if last_processed and updated_at < str(last_processed):
             continue
         try:
             updated_dt = parse_iso8601(updated_at)
@@ -133,16 +133,17 @@ def build_redactor(
     if not enabled:
         return lambda value: value
 
-    compiled = [
-        re.compile(pattern) for pattern in [*DEFAULT_REDACT_PATTERNS, *extra_patterns]
+    compiled = [(re.compile(pattern), True) for pattern in DEFAULT_REDACT_PATTERNS] + [
+        (re.compile(pattern), False) for pattern in extra_patterns
     ]
 
     def redact_text(text: str) -> str:
         redacted = text
-        for pattern in compiled:
-            redacted = pattern.sub(
-                r"\1[REDACTED]" if pattern.groups >= 1 else "[REDACTED]", redacted
+        for pattern, is_builtin in compiled:
+            replacement = (
+                r"\1[REDACTED]" if is_builtin and pattern.groups >= 1 else "[REDACTED]"
             )
+            redacted = pattern.sub(replacement, redacted)
         return redacted
 
     def redact_value(value: Any) -> Any:
@@ -388,6 +389,21 @@ def _run_sync_once(
 ) -> dict[str, Any]:
     index_rows = load_session_index(index_file)
     state = load_sync_state(state_file)
+    if not state.get("last_processed_updated_at") and not state.get(
+        "processed_session_ids"
+    ):
+        seeded_state = dict(state)
+        if index_rows:
+            seeded_state["last_processed_updated_at"] = str(
+                index_rows[-1].get("updated_at", "")
+            )
+        save_sync_state(state_file, seeded_state)
+        return {
+            "selected": 0,
+            "uploaded": 0,
+            "skipped_missing": 0,
+            "state_file": str(state_file),
+        }
     selected_rows = select_sessions_to_process(
         index_rows=index_rows,
         state=state,
