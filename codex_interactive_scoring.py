@@ -37,6 +37,9 @@ def score_interactive_heuristics(trace: dict[str, Any]) -> dict[str, Any]:
         bool(analysis.get("used_uv")),
         bool(analysis.get("ran_tests")),
     ]
+    for optional_signal in ("ran_lint", "ran_format"):
+        if optional_signal in analysis:
+            workflow_signals.append(bool(analysis.get(optional_signal)))
     workflow_compliance = sum(1.0 for item in workflow_signals if item) / max(
         1, len(workflow_signals)
     )
@@ -195,14 +198,16 @@ def _recommended_changes_for_relevance(
     return []
 
 
+def _derive_user_task(trace_payload: dict[str, Any]) -> str:
+    return str(trace_payload.get("user_task") or trace_payload.get("thread_name", ""))
+
+
 def run_subagent_analysis(trace_payload: dict[str, Any]) -> dict[str, Any]:
     analysis = trace_payload.get("analysis", {})
     if not isinstance(analysis, dict):
         analysis = {}
     heuristics = score_interactive_heuristics(trace_payload)
-    derived_user_task = str(
-        trace_payload.get("user_task") or trace_payload.get("thread_name", "")
-    )
+    derived_user_task = _derive_user_task(trace_payload)
 
     friction_signals: list[str] = []
     user_correction_count = int(analysis.get("user_correction_count") or 0)
@@ -228,9 +233,9 @@ def run_subagent_analysis(trace_payload: dict[str, Any]) -> dict[str, Any]:
         workflow_failures.append("missing_uv")
     if not analysis.get("ran_tests"):
         workflow_failures.append("missing_tests")
-    if not analysis.get("ran_lint"):
+    if "ran_lint" in analysis and not analysis.get("ran_lint"):
         workflow_failures.append("missing_lint")
-    if not analysis.get("ran_format"):
+    if "ran_format" in analysis and not analysis.get("ran_format"):
         workflow_failures.append("missing_format")
 
     relevance = _derive_relevance(trace_payload, analysis)
@@ -404,6 +409,7 @@ def score_interactive_trace_payload(
     timeout_seconds: int = 300,
 ) -> dict[str, Any]:
     heuristics = score_interactive_heuristics(trace_payload)
+    derived_user_task = _derive_user_task(trace_payload)
     if scoring_backend == "subagent":
         return merge_interactive_scores(
             heuristic_scores=heuristics,
@@ -418,30 +424,31 @@ def score_interactive_trace_payload(
             timeout_seconds=timeout_seconds,
         )
         judge_scores["scorer_backend"] = "external"
-        judge_scores["derived_user_task"] = str(
-            trace_payload.get("user_task") or trace_payload.get("thread_name", "")
-        )
+        judge_scores["derived_user_task"] = derived_user_task
         judge_scores.setdefault("friction_signals", [])
         judge_scores.setdefault("workflow_failures", [])
         judge_scores.setdefault("recommended_changes", [])
     except (JudgeResponseError, ValueError) as exc:
+        structured_fallback = run_subagent_analysis(trace_payload)
         judge_scores = {
             "task_success": 1.0 if heuristics.get("task_completed") else 0.0,
             "user_friction": heuristics.get("user_friction", 0.0),
             "workflow_compliance": heuristics.get("workflow_compliance", 0.0),
             "efficiency": heuristics.get("efficiency", 0.0),
-            "optimization_relevance": "none",
-            "reasoning": "",
+            "optimization_relevance": structured_fallback.get(
+                "optimization_relevance", "none"
+            ),
+            "reasoning": str(structured_fallback.get("reasoning", "")),
             "judge_status": "fallback",
             "judge_error": str(exc),
             "raw_judge_output": getattr(exc, "raw_output", ""),
             "scorer_backend": "external",
-            "derived_user_task": str(
-                trace_payload.get("user_task") or trace_payload.get("thread_name", "")
+            "derived_user_task": derived_user_task,
+            "friction_signals": list(structured_fallback.get("friction_signals", [])),
+            "workflow_failures": list(structured_fallback.get("workflow_failures", [])),
+            "recommended_changes": list(
+                structured_fallback.get("recommended_changes", [])
             ),
-            "friction_signals": [],
-            "workflow_failures": [],
-            "recommended_changes": [],
         }
     return merge_interactive_scores(
         heuristic_scores=heuristics,

@@ -155,6 +155,8 @@ def test_run_subagent_analysis_returns_structured_recommendations():
                 "branch_created": False,
                 "used_uv": True,
                 "ran_tests": False,
+                "ran_lint": False,
+                "ran_format": False,
                 "tool_call_count": 12,
                 "user_correction_count": 3,
                 "clarification_question_count": 1,
@@ -167,8 +169,32 @@ def test_run_subagent_analysis_returns_structured_recommendations():
     assert (
         result["derived_user_task"] == "Improve AGENTS.md so live demos read docs first"
     )
+    assert result["workflow_compliance"] == 0.2
     assert "high_corrections" in result["friction_signals"]
+    assert "missing_lint" in result["workflow_failures"]
+    assert "missing_format" in result["workflow_failures"]
     assert result["recommended_changes"]
+
+
+def test_run_subagent_analysis_ignores_optional_workflow_failures_when_absent():
+    result = codex_interactive_scoring.run_subagent_analysis(
+        {
+            "thread_name": "demo",
+            "analysis": {
+                "task_completed": True,
+                "branch_created": True,
+                "used_uv": True,
+                "ran_tests": True,
+                "tool_call_count": 2,
+                "user_correction_count": 0,
+                "clarification_question_count": 0,
+            },
+        }
+    )
+
+    assert result["workflow_compliance"] == 1.0
+    assert "missing_lint" not in result["workflow_failures"]
+    assert "missing_format" not in result["workflow_failures"]
 
 
 def test_score_interactive_trace_payload_defaults_to_subagent(monkeypatch):
@@ -228,13 +254,16 @@ def test_score_interactive_trace_payload_external_backend_falls_back(monkeypatch
     result = codex_interactive_scoring.score_interactive_trace_payload(
         {
             "thread_name": "demo",
+            "user_task": "Improve AGENTS.md workflow guidance",
             "analysis": {
                 "task_completed": True,
-                "branch_created": True,
+                "branch_created": False,
                 "used_uv": True,
-                "ran_tests": True,
-                "tool_call_count": 3,
-                "user_correction_count": 0,
+                "ran_tests": False,
+                "ran_lint": False,
+                "ran_format": False,
+                "tool_call_count": 12,
+                "user_correction_count": 3,
                 "clarification_question_count": 0,
             },
         },
@@ -243,6 +272,9 @@ def test_score_interactive_trace_payload_external_backend_falls_back(monkeypatch
 
     assert result["judge_status"] == "fallback"
     assert result["scorer_backend"] == "external"
+    assert "high_corrections" in result["friction_signals"]
+    assert "missing_branch" in result["workflow_failures"]
+    assert result["recommended_changes"]
 
 
 def test_main_uses_context_manager_and_subagent_backend(monkeypatch, tmp_path, capsys):
