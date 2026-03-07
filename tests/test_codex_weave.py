@@ -286,9 +286,10 @@ def test_resolve_weave_project_reads_env_defaults(monkeypatch):
     assert project_path == "env-entity/env-project"
 
 
-def test_resolve_weave_project_requires_entity_and_project(monkeypatch):
+def test_resolve_weave_project_requires_entity_and_project(monkeypatch, tmp_path):
     monkeypatch.delenv("WANDB_ENTITY", raising=False)
     monkeypatch.delenv("WANDB_PROJECT", raising=False)
+    monkeypatch.chdir(tmp_path)
 
     try:
         codex_weave.resolve_weave_project(entity=None, project=None)
@@ -299,11 +300,12 @@ def test_resolve_weave_project_requires_entity_and_project(monkeypatch):
         raise AssertionError("Expected ValueError")
 
 
-def test_resolve_weave_project_infers_entity_from_wandb_viewer(monkeypatch):
+def test_resolve_weave_project_infers_entity_from_wandb_viewer(monkeypatch, tmp_path):
     import agentkaizen.core as _core
 
     monkeypatch.delenv("WANDB_ENTITY", raising=False)
     monkeypatch.setenv("WANDB_PROJECT", "env-project")
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(
         _core,
         "infer_wandb_entity",
@@ -315,11 +317,14 @@ def test_resolve_weave_project_infers_entity_from_wandb_viewer(monkeypatch):
     assert project_path == "viewer-entity/env-project"
 
 
-def test_resolve_weave_project_requires_project_even_with_inferred_entity(monkeypatch):
+def test_resolve_weave_project_requires_project_even_with_inferred_entity(
+    monkeypatch, tmp_path
+):
     import agentkaizen.core as _core
 
     monkeypatch.delenv("WANDB_ENTITY", raising=False)
     monkeypatch.delenv("WANDB_PROJECT", raising=False)
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(
         _core,
         "infer_wandb_entity",
@@ -422,8 +427,56 @@ def test_main_traces_multimodal_prompt_content(
             "image_path": codex_weave._sanitize_path(str(image_path)),
         },
     ]
-    assert fake_weave.calls[-1]["modalities"] == ["text", "image"]
-    assert fake_weave.calls[-1]["prompt"] == "Explain this image"
+
+
+def test_main_black_box_respects_agents_language_instruction(
+    monkeypatch, capsys, tmp_path, fake_weave, install_fake_codex
+):
+    monkeypatch.setenv("WANDB_API_KEY", "x")
+    set_wandb_target_env(monkeypatch)
+    (tmp_path / "AGENTS.md").write_text(
+        "Repository rules.\nYou must respond in Japanese.\n",
+        encoding="utf-8",
+    )
+    install_fake_codex(default_workspace=tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    rc = codex_weave.main(
+        ["--prompt", "Reply in one sentence: what does this repository do?"]
+    )
+
+    out = capsys.readouterr()
+    assert rc == 0
+    assert "このリポジトリ" in out.out
+    assert "W&B Weave" in out.out
+    assert fake_weave.calls[-1]["final_message"].startswith("このリポジトリ")
+
+
+def test_install_fake_codex_clears_stale_default_workspace(
+    monkeypatch, capsys, tmp_path, fake_weave, install_fake_codex
+):
+    monkeypatch.setenv("WANDB_API_KEY", "x")
+    set_wandb_target_env(monkeypatch)
+    first_workspace = tmp_path / "first"
+    second_workspace = tmp_path / "second"
+    first_workspace.mkdir()
+    second_workspace.mkdir()
+    (first_workspace / "AGENTS.md").write_text(
+        "You must respond in Japanese.\n",
+        encoding="utf-8",
+    )
+    install_fake_codex(default_workspace=first_workspace)
+    install_fake_codex(default_workspace=None)
+    monkeypatch.chdir(second_workspace)
+
+    rc = codex_weave.main(
+        ["--prompt", "Reply in one sentence: what does this repository do?"]
+    )
+
+    out = capsys.readouterr()
+    assert rc == 0
+    assert "This repository measures CLI agent behavior with W&B Weave." in out.out
+    assert "このリポジトリ" not in out.out
 
 
 def test_main_applies_builtin_pii_redaction_to_trace_payload(

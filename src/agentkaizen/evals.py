@@ -39,7 +39,7 @@ class CaseLoadError(ValueError):
 
 
 _SCHEMA_MODEL_CACHE: dict[str, type[BaseModel]] = {}
-OPTIONAL_CASE_FIELDS = ("response_schema",)
+OPTIONAL_CASE_FIELDS = ("response_schema", "min_chars")
 
 
 def load_cases_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -349,13 +349,14 @@ def build_eval_scorers(cases: list[dict[str, Any]] | None = None) -> list[Any]:
         forbidden_absent_scorer,
         exact_match_scorer,
         max_chars_scorer,
-        min_chars_scorer,
         json_validity_scorer,
         required_sections_scorer,
         required_content_groups_scorer,
         file_path_citations_scorer,
         token_usage_scorer,
     ]
+    if _dataset_has_field(dataset, "min_chars"):
+        scorers.append(min_chars_scorer)
     if _dataset_has_field(dataset, "response_schema"):
         scorers.extend(
             [

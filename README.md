@@ -41,7 +41,7 @@ If you are new to Weave, start here:
 - A W&B account and API key
 
 ### Environment Variables
-Set the required W&B variables in your shell profile or in `.env.local`:
+Set the required W&B variables in your shell profile or in `.env.local`. For live Weave workflows, set all three explicitly so evals and session scoring do not depend on implicit account inference:
 
 ```bash
 WANDB_API_KEY=your_key_here
@@ -57,7 +57,7 @@ export WANDB_ENTITY=your-team-or-username
 export WANDB_PROJECT=your-weave-project
 ```
 
-All commands in this repo require a W&B project. The entity can come from `--entity`, `WANDB_ENTITY`, `.env.local`, or your logged-in W&B account. If you do not want to set environment variables, pass `--entity` and `--project` explicitly on each command.
+All commands in this repo require a W&B project. The entity can come from `--entity`, `WANDB_ENTITY`, `.env.local`, or your logged-in W&B account, but the most reliable setup is to keep both `WANDB_ENTITY` and `WANDB_PROJECT` in `.env.local`. If you do not want to set environment variables, pass `--entity` and `--project` explicitly on each command.
 
 AgentKaizen-specific environment variables (override `[tool.agentkaizen]` defaults when pyproject.toml is absent):
 - `AGENTKAIZEN_AGENT`: agent runner to use (`codex` or `claude-code`)
@@ -167,6 +167,21 @@ uv run agentkaizen eval \
 
 `agentkaizen eval` runs each variant inside a temporary workspace and, unless you already passed it, automatically adds `--skip-git-repo-check` to the Codex invocation.
 
+### How to read results
+Use evals and session scoring together:
+
+- `quality_score` answers: did this variant help on the active case checks?
+- `quality_delta_vs_baseline` answers: did it help enough to beat the current docs?
+- `gate_pass` answers: did it stay efficient enough on latency and tokens?
+- `optimization_relevance` from `agentkaizen session score` answers: which steering surface should you edit next?
+
+Practical rule of thumb:
+
+- Promote a variant when it outranks baseline, still has `gate_pass: True`, and the traced outputs actually look better.
+- Keep the baseline when quality is similar but the candidate regresses latency or token usage enough to fail the gate.
+- Add at least one control case for instruction-steering experiments so you can confirm the change helps without becoming too rigid.
+- Use the default `session score` backend for fast iteration and the `external` backend as a slower second opinion before shipping a change.
+
 ### Legacy entry points (soft-deprecated)
 The old `codex-weave`, `codex-eval`, `codex-casegen`, `codex-weave-sync-interactive`, and `codex-score-interactive` entry points still work and delegate to the same implementations. Prefer the `agentkaizen` subcommands for new workflows.
 
@@ -249,7 +264,7 @@ This repo uses hybrid redaction for traced content: custom sanitization for repo
 Weave's built-in redaction is enabled for one-shot and interactive trace uploads, but it complements rather than replaces the project-specific sanitization above.
 
 ## Troubleshooting
-- If a command says `WANDB_PROJECT` is missing, add it to your shell or `.env.local`.
+- If a command says `WANDB_PROJECT` is missing, add both `WANDB_PROJECT` and `WANDB_ENTITY` to `.env.local` or pass `--entity`/`--project` explicitly.
 - If a command says `WANDB_API_KEY` is missing or invalid, refresh the key in `.env.local` or your shell session.
 - If an eval is meant to validate structured JSON output, make sure the relevant case rows include `response_schema`.
 
