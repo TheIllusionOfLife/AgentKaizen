@@ -167,6 +167,21 @@ uv run agentkaizen eval \
 
 `agentkaizen eval` runs each variant inside a temporary workspace and, unless you already passed it, automatically adds `--skip-git-repo-check` to the Codex invocation.
 
+### How to read results
+Use evals and session scoring together:
+
+- `quality_score` answers: did this variant help on the active case checks?
+- `quality_delta_vs_baseline` answers: did it help enough to beat the current docs?
+- `gate_pass` answers: did it stay efficient enough on latency and tokens?
+- `optimization_relevance` from `agentkaizen session score` answers: which steering surface should you edit next?
+
+Practical rule of thumb:
+
+- Promote a variant when it outranks baseline, still has `gate_pass: True`, and the traced outputs actually look better.
+- Keep the baseline when quality is similar but the candidate regresses latency or token usage enough to fail the gate.
+- Add at least one control case for instruction-steering experiments so you can confirm the change helps without becoming too rigid.
+- Use the default `session score` backend for fast iteration and the `external` backend as a slower second opinion before shipping a change.
+
 ### Legacy entry points (soft-deprecated)
 The old `codex-weave`, `codex-eval`, `codex-casegen`, `codex-weave-sync-interactive`, and `codex-score-interactive` entry points still work and delegate to the same implementations. Prefer the `agentkaizen` subcommands for new workflows.
 
