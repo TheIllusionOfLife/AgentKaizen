@@ -41,7 +41,7 @@ If you are new to Weave, start here:
 - A W&B account and API key
 
 ### Environment Variables
-Set the required W&B variables in your shell profile or in `.env.local`:
+Set the required W&B variables in your shell profile or in `.env.local`. For live Weave workflows, set all three explicitly so evals and session scoring do not depend on implicit account inference:
 
 ```bash
 WANDB_API_KEY=your_key_here
@@ -57,7 +57,7 @@ export WANDB_ENTITY=your-team-or-username
 export WANDB_PROJECT=your-weave-project
 ```
 
-All commands in this repo require a W&B project. The entity can come from `--entity`, `WANDB_ENTITY`, `.env.local`, or your logged-in W&B account. If you do not want to set environment variables, pass `--entity` and `--project` explicitly on each command.
+All commands in this repo require a W&B project. The entity can come from `--entity`, `WANDB_ENTITY`, `.env.local`, or your logged-in W&B account, but the most reliable setup is to keep both `WANDB_ENTITY` and `WANDB_PROJECT` in `.env.local`. If you do not want to set environment variables, pass `--entity` and `--project` explicitly on each command.
 
 AgentKaizen-specific environment variables (override `[tool.agentkaizen]` defaults when pyproject.toml is absent):
 - `AGENTKAIZEN_AGENT`: agent runner to use (`codex` or `claude-code`)
@@ -249,7 +249,7 @@ This repo uses hybrid redaction for traced content: custom sanitization for repo
 Weave's built-in redaction is enabled for one-shot and interactive trace uploads, but it complements rather than replaces the project-specific sanitization above.
 
 ## Troubleshooting
-- If a command says `WANDB_PROJECT` is missing, add it to your shell or `.env.local`.
+- If a command says `WANDB_PROJECT` is missing, add both `WANDB_PROJECT` and `WANDB_ENTITY` to `.env.local` or pass `--entity`/`--project` explicitly.
 - If a command says `WANDB_API_KEY` is missing or invalid, refresh the key in `.env.local` or your shell session.
 - If an eval is meant to validate structured JSON output, make sure the relevant case rows include `response_schema`.
 

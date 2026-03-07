@@ -96,6 +96,41 @@ def test_load_cases_jsonl_normalizes_optional_builtin_scorer_fields(tmp_path):
     assert rows[1]["response_schema"] is None
 
 
+def test_load_cases_jsonl_normalizes_optional_min_chars_field(tmp_path):
+    path = tmp_path / "cases.jsonl"
+    path.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "prompt": "p1",
+                        "min_chars": 20,
+                        "must_contain": [],
+                        "must_not_contain": [],
+                        "max_chars": 40,
+                    }
+                ),
+                json.dumps(
+                    {
+                        "prompt": "p2",
+                        "must_contain": [],
+                        "must_not_contain": [],
+                        "max_chars": 20,
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    rows = codex_evals.load_cases_jsonl(path)
+
+    assert rows[0]["min_chars"] == 20
+    assert "min_chars" in rows[1]
+    assert rows[1]["min_chars"] is None
+
+
 def test_builtin_valid_json_case_scorer_uses_builtin_validator():
     scorer = codex_evals.BuiltinValidJSONCaseScorer()
 
@@ -150,8 +185,26 @@ def test_build_eval_scorers_skips_optional_builtin_scorers_without_columns():
     )
     names = {scorer.name for scorer in scorers if getattr(scorer, "name", None)}
 
+    assert "score_min_chars" not in names
     assert "builtin_json_validity" not in names
     assert "builtin_pydantic" not in names
+
+
+def test_build_eval_scorers_includes_min_chars_when_dataset_uses_it():
+    scorers = codex_evals.build_eval_scorers(
+        [
+            {
+                "prompt": "p1",
+                "must_contain": [],
+                "must_not_contain": [],
+                "max_chars": 10,
+                "min_chars": 3,
+            }
+        ]
+    )
+    names = {scorer.name for scorer in scorers if getattr(scorer, "name", None)}
+
+    assert "score_min_chars" in names
 
 
 def test_load_cases_jsonl_rejects_missing_path(tmp_path):

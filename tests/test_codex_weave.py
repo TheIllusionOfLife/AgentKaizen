@@ -286,9 +286,10 @@ def test_resolve_weave_project_reads_env_defaults(monkeypatch):
     assert project_path == "env-entity/env-project"
 
 
-def test_resolve_weave_project_requires_entity_and_project(monkeypatch):
+def test_resolve_weave_project_requires_entity_and_project(monkeypatch, tmp_path):
     monkeypatch.delenv("WANDB_ENTITY", raising=False)
     monkeypatch.delenv("WANDB_PROJECT", raising=False)
+    monkeypatch.chdir(tmp_path)
 
     try:
         codex_weave.resolve_weave_project(entity=None, project=None)
@@ -299,11 +300,12 @@ def test_resolve_weave_project_requires_entity_and_project(monkeypatch):
         raise AssertionError("Expected ValueError")
 
 
-def test_resolve_weave_project_infers_entity_from_wandb_viewer(monkeypatch):
+def test_resolve_weave_project_infers_entity_from_wandb_viewer(monkeypatch, tmp_path):
     import agentkaizen.core as _core
 
     monkeypatch.delenv("WANDB_ENTITY", raising=False)
     monkeypatch.setenv("WANDB_PROJECT", "env-project")
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(
         _core,
         "infer_wandb_entity",
@@ -315,11 +317,14 @@ def test_resolve_weave_project_infers_entity_from_wandb_viewer(monkeypatch):
     assert project_path == "viewer-entity/env-project"
 
 
-def test_resolve_weave_project_requires_project_even_with_inferred_entity(monkeypatch):
+def test_resolve_weave_project_requires_project_even_with_inferred_entity(
+    monkeypatch, tmp_path
+):
     import agentkaizen.core as _core
 
     monkeypatch.delenv("WANDB_ENTITY", raising=False)
     monkeypatch.delenv("WANDB_PROJECT", raising=False)
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(
         _core,
         "infer_wandb_entity",
