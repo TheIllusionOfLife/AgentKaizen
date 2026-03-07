@@ -5,6 +5,21 @@ This is a project-owned workflow guide for running the AgentKaizen loop. Before 
 ## Goal
 Use measurable experiments to improve Codex outputs by iterating on foundational documents and config surfaces (for example `AGENTS.md`, `README.md`, skills, and Codex profile/config choices).
 
+## Recommended First Experience
+If you want to demonstrate the full loop for a new user, start with the Japanese-response `AGENTS.md` example that already exists in this repo:
+
+```bash
+uv run agentkaizen eval \
+  --cases evals/cases/language-steering.jsonl \
+  --variant-file evals/variants/example_agents_japanese_response.json
+```
+
+Why this works well as an onboarding demo:
+- the steering change is easy to explain
+- the suite already contains control cases
+- the output difference is visible in both metrics and raw traced outputs
+- the result is interpretable: baseline partially misses the Japanese-targeted checks, while the variant improves them without breaking the explicit-English control
+
 ## Workflow
 1. Define the objective
 - Example: improve conciseness, reduce missed requirements, enforce output format.
@@ -73,6 +88,9 @@ uv run agentkaizen eval \
   2. Gating: did it still `gate_pass`, or did it regress latency/tokens too much?
   3. Scorers: which checks moved, especially `score_contains_all`, `score_max_chars`, and any schema/structure checks that matter for this suite?
   4. Trace inspection: do the actual outputs look better, or did the candidate merely game the literal checks?
+- Always inspect at least one or two actual per-case outputs before deciding to promote a change.
+  - A good eval tells you both that the score moved and why it moved.
+  - If the variant changed behavior but still missed a literal check, that may mean the steering change worked but the case needs refinement.
 - Primary interpretation signals:
   - `quality_score`: overall usefulness against the active checks in the baseline suite
   - `quality_delta_vs_baseline`: whether the candidate meaningfully helped
@@ -119,6 +137,8 @@ uv run agentkaizen run \
 - In a language-steering experiment, a baseline might partially satisfy Japanese-targeted cases while the `AGENTS.md` variant clearly improves `score_contains_all` and still passes the gate.
 - That pattern means the repo-level instruction is influential enough to keep testing.
 - If an explicit English control case still passes, the instruction is likely steering behavior without becoming too rigid.
+- If a Japanese-targeted case still fails because the answer omitted a literal phrase like `W&B Weave`, inspect the traced output before discarding the variant.
+- In that situation, the correct next step may be to refine the case rather than reject the steering change.
 - The next workflow step is not "ship more language instructions everywhere."
 - The next step is "promote the focused `AGENTS.md` change, keep the control case, and run another small eval on adjacent prompts."
 

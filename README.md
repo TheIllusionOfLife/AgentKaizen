@@ -167,6 +167,22 @@ uv run agentkaizen eval \
 
 `agentkaizen eval` runs each variant inside a temporary workspace and, unless you already passed it, automatically adds `--skip-git-repo-check` to the Codex invocation.
 
+### Recommended First Demo
+If you are trying AgentKaizen for the first time, start with the Japanese-response `AGENTS.md` experiment:
+
+```bash
+uv run agentkaizen eval \
+  --cases evals/cases/language-steering.jsonl \
+  --variant-file evals/variants/example_agents_japanese_response.json
+```
+
+Why this is a good first demo:
+
+- it changes one clear steering surface: `AGENTS.md`
+- it includes control cases such as `Say only: ok`
+- it includes an explicit-English control so you can verify the change steers default behavior without overriding direct user intent
+- the output change is easy to see in both the ranking summary and the traced per-case outputs
+
 ### How to read results
 Use evals and session scoring together:
 
@@ -181,6 +197,12 @@ Practical rule of thumb:
 - Keep the baseline when quality is similar but the candidate regresses latency or token usage enough to fail the gate.
 - Add at least one control case for instruction-steering experiments so you can confirm the change helps without becoming too rigid.
 - Use the default `session score` backend for fast iteration and the `external` backend as a slower second opinion before shipping a change.
+
+Do not stop at the ranking summary:
+
+- open the matching Weave eval calls and inspect the traced per-case outputs for baseline and variant
+- verify that the changed outputs look better for the reason you intended, not just because they happened to satisfy a literal scorer
+- if a case still fails, check whether the problem is the model behavior or the case design
 
 ### Legacy entry points (soft-deprecated)
 The old `codex-weave`, `codex-eval`, `codex-casegen`, `codex-weave-sync-interactive`, and `codex-score-interactive` entry points still work and delegate to the same implementations. Prefer the `agentkaizen` subcommands for new workflows.
