@@ -249,6 +249,13 @@ def recover_orphaned_sessions(
     now_dt = now or datetime.now(UTC)
     quiet_cutoff = now_dt - timedelta(seconds=quiet_seconds)
     processed_ids = set(state.get("processed_session_ids", []))
+    watermark_raw = state.get("last_processed_updated_at")
+    watermark_dt: datetime | None = None
+    if watermark_raw:
+        try:
+            watermark_dt = parse_iso8601(str(watermark_raw))
+        except ValueError:
+            pass
     recovered: list[dict[str, Any]] = []
 
     for session_file in sorted(session_root.rglob("*.jsonl")):
@@ -310,6 +317,8 @@ def recover_orphaned_sessions(
         except ValueError:
             continue
         if updated_dt > quiet_cutoff:
+            continue
+        if watermark_dt and updated_dt <= watermark_dt:
             continue
         recovered.append(
             {

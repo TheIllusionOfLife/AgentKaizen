@@ -1151,6 +1151,93 @@ def test_build_interactive_analysis_counts_only_invocations():
     assert analysis["tool_call_count"] == 1
 
 
+def test_recover_orphaned_sessions_skips_sessions_before_watermark(tmp_path):
+    session_root = tmp_path / "sessions"
+    session_dir = session_root / "2026" / "03" / "06"
+    session_dir.mkdir(parents=True)
+    session_id = "019cc148-old-session"
+    session_file = session_dir / f"rollout-{session_id}.jsonl"
+    session_file.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "timestamp": "2026-03-06T01:00:00Z",
+                        "type": "session_meta",
+                        "payload": {"id": session_id},
+                    }
+                ),
+                json.dumps(
+                    {
+                        "timestamp": "2026-03-06T01:05:00Z",
+                        "type": "event_msg",
+                        "payload": {"type": "task_complete"},
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    rows = codex_interactive_sync.recover_orphaned_sessions(
+        session_root=session_root,
+        indexed_session_ids=set(),
+        state={
+            "processed_session_ids": [],
+            "last_processed_updated_at": "2026-03-06T02:00:00Z",
+        },
+        now=datetime(2026, 3, 6, 4, 0, 0, tzinfo=UTC),
+        quiet_seconds=0,
+    )
+
+    assert rows == []
+
+
+def test_recover_orphaned_sessions_includes_sessions_after_watermark(tmp_path):
+    session_root = tmp_path / "sessions"
+    session_dir = session_root / "2026" / "03" / "06"
+    session_dir.mkdir(parents=True)
+    session_id = "019cc148-new-session"
+    session_file = session_dir / f"rollout-{session_id}.jsonl"
+    session_file.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "timestamp": "2026-03-06T03:00:00Z",
+                        "type": "session_meta",
+                        "payload": {"id": session_id},
+                    }
+                ),
+                json.dumps(
+                    {
+                        "timestamp": "2026-03-06T03:05:00Z",
+                        "type": "event_msg",
+                        "payload": {"type": "task_complete"},
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    rows = codex_interactive_sync.recover_orphaned_sessions(
+        session_root=session_root,
+        indexed_session_ids=set(),
+        state={
+            "processed_session_ids": [],
+            "last_processed_updated_at": "2026-03-06T02:00:00Z",
+        },
+        now=datetime(2026, 3, 6, 4, 0, 0, tzinfo=UTC),
+        quiet_seconds=0,
+    )
+
+    assert len(rows) == 1
+    assert rows[0]["id"] == session_id
+
+
 def test_image_url_file_uri_sanitized(tmp_path):
     session_file = tmp_path / "rollout.jsonl"
     session_file.write_text(
