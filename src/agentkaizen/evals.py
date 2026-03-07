@@ -411,8 +411,8 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--cases",
-        default="evals/cases",
-        help="Path to a JSONL evaluation file or directory of JSONL case suites",
+        default=None,
+        help="Path to a JSONL evaluation file or directory of JSONL case suites (default: evals/cases)",
     )
     parser.add_argument(
         "--variant-file",
@@ -452,8 +452,8 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--timeout-seconds",
         type=int,
-        default=300,
-        help="Timeout for each codex exec call in seconds",
+        default=None,
+        help="Timeout for each codex exec call in seconds (default: 300)",
     )
     return parser
 
@@ -774,21 +774,26 @@ def render_ranked_summary_table(ranked: list[dict[str, Any]]) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
+    from agentkaizen.config import load_config, merge_cli_args
+
     parser = _build_parser()
     args = parser.parse_args(argv)
+
+    config = load_config()
+    config = merge_cli_args(config, args)
 
     if not ensure_wandb_api_key():
         print("WANDB_API_KEY is required to run evals.", file=sys.stderr)
         return 2
     try:
-        project_path = resolve_weave_project(args.entity, args.project)
+        project_path = resolve_weave_project(config.entity, config.project)
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
 
     repo_root = Path.cwd()
     try:
-        cases = load_cases_jsonl(Path(args.cases))
+        cases = load_cases_jsonl(Path(config.cases))
     except CaseLoadError as exc:
         print(str(exc), file=sys.stderr)
         return 2
@@ -812,7 +817,7 @@ def main(argv: list[str] | None = None) -> int:
             resolved_config = resolve_variant_codex_config(
                 variant=variant,
                 cli_args={
-                    "model": args.model,
+                    "model": config.model,
                     "sandbox": args.sandbox,
                     "profile": args.profile,
                     "codex_args": args.codex_arg,
@@ -825,7 +830,7 @@ def main(argv: list[str] | None = None) -> int:
                 sandbox=resolved_config["sandbox"],
                 profile=resolved_config["profile"],
                 codex_args=resolved_config["codex_args"],
-                timeout_seconds=args.timeout_seconds,
+                timeout_seconds=config.timeout_seconds,
             )
             evaluation = weave.Evaluation(
                 name=f"codex-doc-impact-{variant['name']}",

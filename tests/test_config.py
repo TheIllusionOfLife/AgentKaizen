@@ -29,12 +29,16 @@ def test_default_config_values():
 # ---------------------------------------------------------------------------
 
 
-def test_load_config_returns_defaults_when_no_pyproject(tmp_path):
+def test_load_config_returns_defaults_when_no_pyproject(monkeypatch, tmp_path):
+    monkeypatch.delenv("WANDB_ENTITY", raising=False)
+    monkeypatch.delenv("WANDB_PROJECT", raising=False)
     cfg = load_config(tmp_path / "nonexistent.toml")
     assert cfg == AgentKaizenConfig()
 
 
-def test_load_config_returns_defaults_when_section_absent(tmp_path):
+def test_load_config_returns_defaults_when_section_absent(monkeypatch, tmp_path):
+    monkeypatch.delenv("WANDB_ENTITY", raising=False)
+    monkeypatch.delenv("WANDB_PROJECT", raising=False)
     toml = tmp_path / "pyproject.toml"
     toml.write_text("[project]\nname = 'foo'\n", encoding="utf-8")
     cfg = load_config(toml)

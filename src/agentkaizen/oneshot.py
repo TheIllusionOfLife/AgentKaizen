@@ -117,21 +117,26 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--timeout-seconds",
         type=int,
-        default=300,
-        help="Timeout for codex exec in seconds",
+        default=None,
+        help="Timeout for codex exec in seconds (default: 300)",
     )
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
+    from agentkaizen.config import load_config, merge_cli_args
+
     parser = _build_arg_parser()
     args = parser.parse_args(argv)
+
+    config = load_config()
+    config = merge_cli_args(config, args)
 
     if not ensure_wandb_api_key():
         print("WANDB_API_KEY is required to send traces to W&B.", file=sys.stderr)
         return 2
     try:
-        project_path = resolve_weave_project(args.entity, args.project)
+        project_path = resolve_weave_project(config.entity, config.project)
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
@@ -144,8 +149,8 @@ def main(argv: list[str] | None = None) -> int:
     weave.init(project_path)
 
     runner = get_runner(
-        "codex",
-        model=args.model,
+        config.agent,
+        model=config.model,
         sandbox=args.sandbox,
         profile=args.profile,
         image_paths=args.image,
@@ -156,7 +161,7 @@ def main(argv: list[str] | None = None) -> int:
     def run_codex_exec_traced() -> dict:
         command = runner.build_command(prompt)
         try:
-            result = runner.run(prompt, timeout_seconds=args.timeout_seconds)
+            result = runner.run(prompt, timeout_seconds=config.timeout_seconds)
         except AgentRunError as exc:
             return {
                 "command": sanitize_command(command),
