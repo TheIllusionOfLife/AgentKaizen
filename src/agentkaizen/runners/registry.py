@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 from typing import Any
 
 from agentkaizen.runners.base import AgentRunner
@@ -20,4 +21,6 @@ def get_runner(name: str = "codex", **kwargs: Any) -> AgentRunner:
     if runner_cls is None:
         supported = ", ".join(sorted(RUNNERS))
         raise ValueError(f"Unknown agent runner {name!r}. Supported: {supported}")
-    return runner_cls(**kwargs)
+    accepted = {f.name for f in dataclasses.fields(runner_cls)}
+    filtered = {k: v for k, v in kwargs.items() if k in accepted}
+    return runner_cls(**filtered)
