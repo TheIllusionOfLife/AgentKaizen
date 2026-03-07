@@ -452,6 +452,33 @@ def test_main_black_box_respects_agents_language_instruction(
     assert fake_weave.calls[-1]["final_message"].startswith("このリポジトリ")
 
 
+def test_install_fake_codex_clears_stale_default_workspace(
+    monkeypatch, capsys, tmp_path, fake_weave, install_fake_codex
+):
+    monkeypatch.setenv("WANDB_API_KEY", "x")
+    set_wandb_target_env(monkeypatch)
+    first_workspace = tmp_path / "first"
+    second_workspace = tmp_path / "second"
+    first_workspace.mkdir()
+    second_workspace.mkdir()
+    (first_workspace / "AGENTS.md").write_text(
+        "You must respond in Japanese.\n",
+        encoding="utf-8",
+    )
+    install_fake_codex(default_workspace=first_workspace)
+    install_fake_codex(default_workspace=None)
+    monkeypatch.chdir(second_workspace)
+
+    rc = codex_weave.main(
+        ["--prompt", "Reply in one sentence: what does this repository do?"]
+    )
+
+    out = capsys.readouterr()
+    assert rc == 0
+    assert "This repository measures CLI agent behavior with W&B Weave." in out.out
+    assert "このリポジトリ" not in out.out
+
+
 def test_main_applies_builtin_pii_redaction_to_trace_payload(
     monkeypatch, capsys, fake_weave, fake_subprocess_run
 ):

@@ -1040,10 +1040,14 @@ def test_eval_main_black_box_detects_agents_language_variant(
                 "score_max_chars": {"pass": _fraction(max_char_passes)},
                 "score_token_usage": {
                     "total_tokens": {
-                        "mean": sum(token_totals) / len(token_totals),
+                        "mean": sum(token_totals) / len(token_totals)
+                        if token_totals
+                        else 0.0,
                     }
                 },
-                "model_latency": {"mean": sum(latencies) / len(latencies)},
+                "model_latency": {
+                    "mean": sum(latencies) / len(latencies) if latencies else 0.0
+                },
             }
 
     monkeypatch.setattr(codex_evals.weave, "Evaluation", FakeEvaluation)
