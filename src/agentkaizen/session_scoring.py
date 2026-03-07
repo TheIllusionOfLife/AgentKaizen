@@ -486,27 +486,6 @@ def build_judge_repair_prompt(raw_response: str, error_message: str) -> str:
     )
 
 
-def _extract_agent_message_text(stdout: str) -> str:
-    final_text = ""
-    for line in stdout.splitlines():
-        stripped = line.strip()
-        if not stripped:
-            continue
-        try:
-            event = json.loads(stripped)
-        except json.JSONDecodeError:
-            continue
-        if not isinstance(event, dict):
-            continue
-        item = event.get("item", {})
-        if event.get("type") == "item.completed" and isinstance(item, dict):
-            if item.get("type") == "agent_message" and isinstance(
-                item.get("text"), str
-            ):
-                final_text = item["text"]
-    return final_text
-
-
 def _run_codex_prompt(
     prompt: str,
     *,

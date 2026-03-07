@@ -44,6 +44,10 @@ class ClaudeCodeRunner:
             raise AgentRunError(
                 f"claude exec timed out after {timeout_seconds} seconds"
             ) from exc
+        except OSError as exc:
+            raise AgentRunError(
+                f"claude exec failed to start ({exc}): {command[0]!r}"
+            ) from exc
 
         if proc.returncode != 0:
             raise AgentRunError(
@@ -63,14 +67,31 @@ class ClaudeCodeRunner:
             )
 
         if payload.get("is_error"):
+            error_detail = (
+                payload.get("error")
+                or payload.get("message")
+                or payload.get("result")
+                or ""
+            )
+            raise AgentRunError(f"claude returned an error: {error_detail}")
+
+        if payload.get("type") != "result" or not isinstance(
+            payload.get("result"), str
+        ):
             raise AgentRunError(
-                f"claude returned an error: {payload.get('result', '')}"
+                f"claude returned unexpected payload shape: {proc.stdout[:200]!r}"
             )
 
-        final_message = str(payload.get("result", ""))
+        raw_usage = payload.get("usage") or {}
+        usage = AgentUsage(
+            input_tokens=int(raw_usage.get("input_tokens") or 0),
+            output_tokens=int(raw_usage.get("output_tokens") or 0),
+            total_tokens=int(raw_usage.get("total_tokens") or 0),
+        )
+
         return AgentResult(
-            final_message=final_message,
-            usage=AgentUsage(),
+            final_message=payload["result"],
+            usage=usage,
             raw_events=[payload],
             returncode=proc.returncode,
             stderr=proc.stderr,

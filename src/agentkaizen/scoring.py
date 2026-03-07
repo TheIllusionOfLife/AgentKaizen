@@ -71,10 +71,11 @@ def score_exact_match(
             "expected": None,
         }
     text = _extract_text(output).strip()
+    normalized_expected = exact_match.strip()
     return {
-        "pass": text == exact_match,
+        "pass": text == normalized_expected,
         "exact_match_required": True,
-        "expected": exact_match,
+        "expected": normalized_expected,
         "actual": text,
     }
 
@@ -181,12 +182,17 @@ def score_file_path_citations(
         }
     text = _extract_text(output)
     matches = re.findall(
-        r"(?:^|[\s\[(])([A-Za-z0-9_.\-]+(?:/[A-Za-z0-9_./\-]+)?\.[A-Za-z0-9_]+(?:#L\d+(?:C\d+)?)?)",
+        r"(?:^|[\s\[(])"
+        r"([A-Za-z]:[/\\][A-Za-z0-9_./\\\-]+\.[A-Za-z0-9_]+"  # Windows absolute: C:\...
+        r"|/[A-Za-z0-9_./\-]+\.[A-Za-z0-9_]+"  # POSIX absolute: /foo/bar.py
+        r"|[A-Za-z0-9_.\-]+(?:[/\\][A-Za-z0-9_./\\\-]+)?\.[A-Za-z0-9_]+"  # relative
+        r")(?:#L\d+(?:C\d+)?)?",
         text,
     )
+    unique_paths = {p.replace("\\", "/").lower() for p in matches}
     return {
-        "pass": len(matches) >= max(1, min_file_paths),
-        "path_count": len(matches),
+        "pass": len(unique_paths) >= max(1, min_file_paths),
+        "path_count": len(unique_paths),
         "require_file_paths": True,
         "min_file_paths": max(1, min_file_paths),
     }
@@ -203,7 +209,9 @@ def score_token_usage(output: str | dict[str, Any]) -> dict[str, Any]:
 
     input_tokens = _safe_int(usage.get("input_tokens", 0))
     output_tokens = _safe_int(usage.get("output_tokens", 0))
-    total_tokens = input_tokens + output_tokens
+    total_tokens = _safe_int(usage.get("total_tokens", 0)) or (
+        input_tokens + output_tokens
+    )
     return {
         "pass": True,
         "input_tokens": input_tokens,
