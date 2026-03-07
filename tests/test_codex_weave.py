@@ -300,10 +300,12 @@ def test_resolve_weave_project_requires_entity_and_project(monkeypatch):
 
 
 def test_resolve_weave_project_infers_entity_from_wandb_viewer(monkeypatch):
+    import agentkaizen.core as _core
+
     monkeypatch.delenv("WANDB_ENTITY", raising=False)
     monkeypatch.setenv("WANDB_PROJECT", "env-project")
     monkeypatch.setattr(
-        codex_weave,
+        _core,
         "infer_wandb_entity",
         lambda: "viewer-entity",
     )
@@ -314,10 +316,12 @@ def test_resolve_weave_project_infers_entity_from_wandb_viewer(monkeypatch):
 
 
 def test_resolve_weave_project_requires_project_even_with_inferred_entity(monkeypatch):
+    import agentkaizen.core as _core
+
     monkeypatch.delenv("WANDB_ENTITY", raising=False)
     monkeypatch.delenv("WANDB_PROJECT", raising=False)
     monkeypatch.setattr(
-        codex_weave,
+        _core,
         "infer_wandb_entity",
         lambda: "viewer-entity",
     )

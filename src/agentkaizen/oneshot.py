@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import subprocess  # noqa: F401  (re-exported for test patchability)
 import sys
 
@@ -21,29 +20,16 @@ from agentkaizen.core import (
     build_prompt_content,
     configure_weave_pii_redaction,
     ensure_wandb_api_key,
-    ensure_wandb_env,
-    infer_wandb_entity,
+    ensure_wandb_env,  # noqa: F401  (re-exported for test access)
+    infer_wandb_entity,  # noqa: F401  (re-exported for test patchability)
     load_wandb_api_key_from_env_file,  # noqa: F401  (re-exported for test access)
     load_wandb_env_from_env_file,  # noqa: F401  (re-exported for test access)
     parse_codex_jsonl,  # noqa: F401  (re-exported for test access)
+    resolve_weave_project,  # noqa: F401  (re-exported for test patchability)
     sanitize_command,
     summarize_modalities,
 )
 from agentkaizen.scoring import evaluate_output
-
-
-def resolve_weave_project(entity: str | None, project: str | None) -> str:
-    """Resolve W&B project path, using local infer_wandb_entity for patchability."""
-    ensure_wandb_env()
-    resolved_entity = entity or os.environ.get("WANDB_ENTITY") or infer_wandb_entity()
-    resolved_project = project or os.environ.get("WANDB_PROJECT")
-    if resolved_entity and not os.environ.get("WANDB_ENTITY"):
-        os.environ["WANDB_ENTITY"] = resolved_entity
-    if resolved_entity and resolved_project:
-        return f"{resolved_entity}/{resolved_project}"
-    raise ValueError(
-        "W&B project resolution requires WANDB_PROJECT and an entity. Pass --entity/--project, set WANDB_ENTITY/WANDB_PROJECT, or put them in .env.local. WANDB_ENTITY can be inferred from your logged-in W&B account, but WANDB_PROJECT must be set explicitly."
-    )
 
 
 def build_codex_command(
@@ -54,20 +40,17 @@ def build_codex_command(
     image_paths: list[str] | None = None,
     codex_args: list[str] | None = None,
 ) -> list[str]:
-    command = ["codex", "exec", "--json"]
-    if model:
-        command.extend(["--model", model])
-    if sandbox:
-        command.extend(["--sandbox", sandbox])
-    if profile:
-        command.extend(["--profile", profile])
-    if image_paths:
-        for image_path in image_paths:
-            command.extend(["--image", image_path])
-    if codex_args:
-        command.extend(codex_args)
-    command.append(prompt)
-    return command
+    """Backward-compat wrapper; delegates to CodexRunner.build_command()."""
+    from agentkaizen.runners.codex import CodexRunner
+
+    runner = CodexRunner(
+        model=model,
+        sandbox=sandbox,
+        profile=profile,
+        image_paths=image_paths or [],
+        extra_args=codex_args or [],
+    )
+    return runner.build_command(prompt)
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:
