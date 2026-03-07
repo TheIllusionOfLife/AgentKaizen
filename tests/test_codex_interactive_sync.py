@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
-import codex_interactive_sync
+import agentkaizen.session_sync as codex_interactive_sync
 
 
 def test_load_session_index_rows(tmp_path):

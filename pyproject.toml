@@ -1,13 +1,31 @@
 [project]
 name = "agentkaizen"
 version = "0.1.0"
+description = "Portable CLI evaluation tool for AI coding agents — trace, score, and compare agent behavior with W&B Weave"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "AgentKaizen Contributors" }]
 requires-python = ">=3.12"
 dependencies = [
   "python-dotenv>=1.0",
   "weave[scorers]>=0.52.30",
 ]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Software Development :: Testing",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/TheIllusionOfLife/AgentKaizen"
+"Bug Tracker" = "https://github.com/TheIllusionOfLife/AgentKaizen/issues"
 
 [project.scripts]
+agentkaizen = "agentkaizen.cli:main"
 codex-weave = "codex_weave:main"
 codex-eval = "codex_evals:main"
 codex-casegen = "codex_casegen:main"
@@ -20,6 +38,9 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
 py-modules = ["codex_weave", "codex_evals", "codex_scoring", "codex_casegen", "codex_interactive_sync", "codex_interactive_scoring"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [dependency-groups]
 dev = [

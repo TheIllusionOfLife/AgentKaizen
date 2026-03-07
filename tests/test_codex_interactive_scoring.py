@@ -5,8 +5,8 @@ import subprocess
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
-import codex_interactive_scoring
-import codex_interactive_sync
+import agentkaizen.session_scoring as codex_interactive_scoring
+import agentkaizen.session_sync as codex_interactive_sync
 
 from conftest import set_wandb_target_env
 

@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
-import codex_casegen
+import agentkaizen.casegen as codex_casegen
 
 from conftest import set_wandb_target_env
 

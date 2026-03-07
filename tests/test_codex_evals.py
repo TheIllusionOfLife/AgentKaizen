@@ -5,7 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
-import codex_evals
+import agentkaizen.evals as codex_evals
 
 from conftest import set_wandb_target_env
 

@@ -6,16 +6,24 @@
 - `PRODUCT.md`: product goals and user context
 - `TECH.md`: technical stack and constraints
 - `STRUCTURE.md`: repository layout and conventions
-- `codex_weave.py`: traced `codex exec` wrapper
-- `codex_evals.py`: offline eval runner for document and config variants
-- `codex_casegen.py`: draft case generation from recent traces
-- `codex_interactive_sync.py`: local interactive-session ingestion
-- `codex_interactive_scoring.py`: interactive trace analysis and scoring
-- `codex_scoring.py`: shared scorer functions
+- `src/agentkaizen/`: canonical package (see below)
+- `codex_weave.py` etc.: backward-compat shims — re-export `main` from `agentkaizen.*` for legacy entry points
 - `evals/`: eval datasets and variant definitions
-- `tests/`: test suite mirroring runtime modules
+- `tests/`: test suite
 - `scripts/`: thin wrapper scripts
 - `docs/`: secondary project docs and reference material
+
+## Package Layout (`src/agentkaizen/`)
+- `cli.py`: unified `agentkaizen` entry point with subcommand dispatch
+- `core.py`: shared infra — JSONL parser, PII redaction, W&B env resolution, prompt building
+- `oneshot.py`: one-shot traced agent run (`agentkaizen run`)
+- `evals.py`: offline variant comparison using temporary workspaces
+- `casegen.py`: draft case generation from recent Weave traces
+- `session_sync.py`: local interactive-session ingestion into Weave traces
+- `session_scoring.py`: interactive trace analysis and scoring
+- `scoring.py`: shared deterministic scorer functions
+- `config.py`: load `[tool.agentkaizen]` from pyproject.toml; merge with CLI args
+- `runners/`: `AgentRunner` protocol + `CodexRunner`, `ClaudeCodeRunner`, registry
 
 ## Docs Layout
 - `docs/workflows/`: project-owned workflow guides
@@ -24,20 +32,28 @@
 ## Module Boundaries
 - Add new logic to an existing module when it clearly belongs to that module's responsibility.
 - Create a new module only when the responsibility is distinct and would otherwise blur boundaries.
-- Keep scoring rules out of CLI entry points when they can live in `codex_scoring.py`.
+- Keep scoring rules out of CLI entry points when they can live in `src/agentkaizen/scoring.py`.
 - Keep ingestion separate from analysis for interactive sessions.
-- Keep one-shot tracing concerns in `codex_weave.py`.
-- Keep full-session reconstruction and redaction concerns in `codex_interactive_sync.py`.
-- Keep offline evaluation-time model wrappers in `codex_evals.py`.
+- Keep one-shot tracing concerns in `src/agentkaizen/oneshot.py`.
+- Keep full-session reconstruction and redaction concerns in `src/agentkaizen/session_sync.py`.
+- Keep offline evaluation-time model wrappers in `src/agentkaizen/evals.py`.
+- All agent subprocess calls must go through `agentkaizen.runners.get_runner()`. Implement new agent runners in `runners/` and register them in `runners/registry.py`.
 
 ## Tests
-- Test files should mirror the module they cover:
-  - `tests/test_codex_weave.py`
-  - `tests/test_codex_evals.py`
-  - `tests/test_codex_casegen.py`
-  - `tests/test_codex_interactive_sync.py`
-  - `tests/test_codex_interactive_scoring.py`
-  - `tests/test_codex_scoring.py`
+- Test files cover the canonical `agentkaizen.*` modules using the alias trick:
+  ```python
+  import agentkaizen.oneshot as codex_weave  # alias for test patchability
+  ```
+- Current test files:
+  - `tests/test_codex_weave.py` — covers `agentkaizen.oneshot` (and `agentkaizen.core`)
+  - `tests/test_codex_evals.py` — covers `agentkaizen.evals`
+  - `tests/test_codex_casegen.py` — covers `agentkaizen.casegen`
+  - `tests/test_codex_interactive_sync.py` — covers `agentkaizen.session_sync`
+  - `tests/test_codex_interactive_scoring.py` — covers `agentkaizen.session_scoring`
+  - `tests/test_codex_scoring.py` — covers `agentkaizen.scoring`
+  - `tests/test_cli.py` — covers `agentkaizen.cli`
+  - `tests/test_config.py` — covers `agentkaizen.config`
+  - `tests/test_runners.py` — covers `agentkaizen.runners`
 - Shared test helpers belong in `tests/conftest.py`
 
 ## Naming and Import Conventions
@@ -46,9 +62,4 @@
 - Keep CLI parser and `main()` logic near the entry point module that owns the command
 
 ## When To Reorganize Further
-The current repo intentionally keeps core modules at the root for easy inspection. A package refactor should happen only if:
-- import boundaries become confusing
-- shared internal helpers grow substantially
-- release packaging needs become more complex
-
-Until then, prefer improving docs and boundaries over moving all runtime code into a package.
+The repo uses a `src/agentkaizen/` layout. New runtime code belongs in the package, not at the root. Add new modules to `src/agentkaizen/` when the responsibility is distinct. Add new agent runners under `src/agentkaizen/runners/` and register them in `registry.py`.

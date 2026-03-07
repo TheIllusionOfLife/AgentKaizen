@@ -9,7 +9,7 @@
 - CI: GitHub Actions
 
 ## Runtime Dependencies
-- Codex CLI (`codex`) is required for the main workflows
+- Codex CLI (`codex`) or Claude Code CLI (`claude`) — at least one is required depending on the configured agent
 - W&B credentials are required for live tracing and eval submission:
   - `WANDB_API_KEY`
   - `WANDB_ENTITY`
@@ -23,25 +23,27 @@ Useful optional Weave and W&B environment variables:
 - `WEAVE_DISABLED`
 
 ## Key Technical Choices
-- Single-file top-level modules keep each CLI entry point easy to inspect
+- `src/agentkaizen/` package layout with root-level backward-compat shims for legacy entry points
+- `AgentRunner` protocol in `runners/` isolates agent-specific subprocess logic from calling code
 - `weave.op()` is used to capture traced operations
 - `weave.Evaluation()` is used for offline comparison of variants
 - Temporary workspaces isolate candidate doc and config edits during evals
-- Shared scorer functions centralize output checks and reduce drift
+- Shared scorer functions in `scoring.py` centralize output checks and reduce drift
+- `[tool.agentkaizen]` in pyproject.toml provides config defaults; CLI flags always win
 
 ## How Weave Is Used Here
 ### Tracing
 There are two tracing modes in this project:
-- one-shot `codex exec` tracing in `codex_weave.py`
-- full interactive-session ingestion in `codex_interactive_sync.py`
+- one-shot agent run tracing in `agentkaizen.oneshot` (`agentkaizen run`)
+- full interactive-session ingestion in `agentkaizen.session_sync` (`agentkaizen session sync`)
 
-The first tracks a single Codex execution. The second reconstructs an entire local Codex session into a structured trace payload.
+The first tracks a single agent execution via `AgentRunner`. The second reconstructs an entire local Codex session into a structured trace payload.
 
 ### Prompts, datasets, scorers, and models
 - Prompts come from direct CLI prompts, derived interactive tasks, and eval case files.
 - Datasets are JSONL case files used for offline evals.
-- Scorers are shared Python functions wrapped for Weave evaluation.
-- Models are app-level Weave models. `CodexVariantModel` represents a variant of Codex behavior running in a specific temporary workspace with a specific config.
+- Scorers are shared Python functions in `agentkaizen.scoring`, wrapped for Weave evaluation.
+- Models are app-level Weave models. `CodexVariantModel` represents a variant of agent behavior running in a specific temporary workspace with a specific config.
 
 ### App versioning
 This repo uses `weave.Model` for evaluation-time app versioning, not for a full standalone model registry. A variant is effectively "this repo state plus these edits plus this Codex config," evaluated against a shared case set.
@@ -66,7 +68,7 @@ This project currently relies on environment variables for operational Weave beh
 - temporary local tracing disablement through `WEAVE_DISABLED=true`
 
 ## Constraints
-- The repo is designed around Codex CLI output and local Codex session files
+- The repo is designed around CLI agent output (Codex and Claude Code) and local Codex session files
 - The project assumes reproducible CLI workflows rather than notebook-first workflows
 - No database or web service is maintained by this repo; Weave is the main persistence and analysis layer
 - Tests should remain fast and mostly unit-level, using monkeypatching instead of real networked runs

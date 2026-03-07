@@ -8,7 +8,7 @@ import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
-import codex_weave
+import agentkaizen.oneshot as codex_weave
 
 from conftest import set_wandb_target_env
 
@@ -37,7 +37,7 @@ def fake_weave(monkeypatch):
         def init(self, _project):
             return None
 
-        def op(self):
+        def op(self, **_kwargs):
             def deco(fn):
                 def wrapped(*args, **kwargs):
                     result = fn(*args, **kwargs)
