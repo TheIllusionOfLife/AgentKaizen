@@ -29,16 +29,30 @@ def test_default_config_values():
 # ---------------------------------------------------------------------------
 
 
+def _clear_config_env(monkeypatch):
+    """Remove all env vars that load_config() reads."""
+    for key in (
+        "AGENTKAIZEN_AGENT",
+        "AGENTKAIZEN_MODEL",
+        "AGENTKAIZEN_TIMEOUT_SECONDS",
+        "AGENTKAIZEN_SCORING_BACKEND",
+        "AGENTKAIZEN_CASES",
+        "AGENTKAIZEN_ENTITY",
+        "AGENTKAIZEN_PROJECT",
+        "WANDB_ENTITY",
+        "WANDB_PROJECT",
+    ):
+        monkeypatch.delenv(key, raising=False)
+
+
 def test_load_config_returns_defaults_when_no_pyproject(monkeypatch, tmp_path):
-    monkeypatch.delenv("WANDB_ENTITY", raising=False)
-    monkeypatch.delenv("WANDB_PROJECT", raising=False)
+    _clear_config_env(monkeypatch)
     cfg = load_config(tmp_path / "nonexistent.toml")
     assert cfg == AgentKaizenConfig()
 
 
 def test_load_config_returns_defaults_when_section_absent(monkeypatch, tmp_path):
-    monkeypatch.delenv("WANDB_ENTITY", raising=False)
-    monkeypatch.delenv("WANDB_PROJECT", raising=False)
+    _clear_config_env(monkeypatch)
     toml = tmp_path / "pyproject.toml"
     toml.write_text("[project]\nname = 'foo'\n", encoding="utf-8")
     cfg = load_config(toml)
@@ -194,18 +208,7 @@ def test_load_config_env_int_conversion(monkeypatch, tmp_path):
 
 
 def test_load_config_defaults_apply_without_env_or_pyproject(monkeypatch, tmp_path):
-    for key in (
-        "AGENTKAIZEN_AGENT",
-        "AGENTKAIZEN_MODEL",
-        "AGENTKAIZEN_TIMEOUT_SECONDS",
-        "AGENTKAIZEN_SCORING_BACKEND",
-        "AGENTKAIZEN_CASES",
-        "AGENTKAIZEN_ENTITY",
-        "AGENTKAIZEN_PROJECT",
-    ):
-        monkeypatch.delenv(key, raising=False)
-    for key in ("WANDB_ENTITY", "WANDB_PROJECT"):
-        monkeypatch.delenv(key, raising=False)
+    _clear_config_env(monkeypatch)
     cfg = load_config(tmp_path / "nonexistent.toml")
     assert cfg == AgentKaizenConfig()
 

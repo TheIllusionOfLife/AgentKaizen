@@ -39,7 +39,18 @@ def load_config(path: Path | None = None) -> AgentKaizenConfig:
         if name not in section:
             env_val = os.environ.get(f"{_ENV_PREFIX}{name.upper()}")
             if env_val is not None:
-                section[name] = int(env_val) if name in _INT_FIELDS else env_val
+                if name in _INT_FIELDS:
+                    try:
+                        section[name] = int(env_val)
+                    except ValueError:
+                        import warnings
+
+                        warnings.warn(
+                            f"Ignoring non-integer value for {_ENV_PREFIX}{name.upper()}: {env_val!r}",
+                            stacklevel=2,
+                        )
+                else:
+                    section[name] = env_val
 
     # Layer 2b: WANDB_* env vars as fallback for entity/project
     for wandb_key, field_name in _WANDB_ENV_MAP.items():
@@ -66,7 +77,7 @@ def _load_pyproject_section(path: Path | None = None) -> dict[str, Any]:
 
     try:
         data = tomllib.loads(resolved.read_text(encoding="utf-8"))
-    except Exception:
+    except (tomllib.TOMLDecodeError, OSError):
         return {}
 
     section: dict[str, Any] = data.get("tool", {}).get("agentkaizen", {})
