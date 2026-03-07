@@ -104,7 +104,8 @@ def _sanitize_image_url(url: str) -> str:
     if parsed.scheme == "file":
         local_path = urllib.parse.unquote(parsed.path)
         sanitized = _sanitize_path(local_path)
-        return urllib.parse.urlunparse(parsed._replace(path=sanitized))
+        encoded = urllib.parse.quote(sanitized, safe="/[]")
+        return urllib.parse.urlunparse(parsed._replace(path=encoded))
     return url
 
 
