@@ -2,6 +2,7 @@ import json
 import pathlib
 import sys
 from pathlib import Path
+from time import perf_counter
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
@@ -870,3 +871,142 @@ def test_regression_gate_handles_zero_baseline_values():
     assert candidate["gate_pass"] is False
     assert "latency_regression" in candidate["gate_reason"]
     assert "token_regression" in candidate["gate_reason"]
+
+
+def test_eval_main_black_box_detects_agents_language_variant(
+    monkeypatch, capsys, tmp_path, install_fake_codex
+):
+    monkeypatch.setattr(codex_evals, "ensure_wandb_api_key", lambda: "x")
+    set_wandb_target_env(monkeypatch)
+    monkeypatch.setattr(codex_evals.weave, "init", lambda _project: None)
+    install_fake_codex()
+
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    monkeypatch.chdir(repo_root)
+    (repo_root / "AGENTS.md").write_text(
+        "Default repository instructions.\n", encoding="utf-8"
+    )
+    cases_path = repo_root / "language-steering.jsonl"
+    cases_path.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "id": "jp-summary",
+                        "prompt": "Reply in one sentence: what does this repository do?",
+                        "must_contain": ["このリポジトリ", "W&B Weave"],
+                        "must_not_contain": ["I cannot"],
+                        "max_chars": 240,
+                        "require_json": False,
+                        "required_sections": [],
+                        "require_file_paths": False,
+                    }
+                ),
+                json.dumps(
+                    {
+                        "id": "english-control",
+                        "prompt": "Respond in English with one sentence: what does this repository do?",
+                        "must_contain": ["This repository", "W&B Weave"],
+                        "must_not_contain": [],
+                        "max_chars": 240,
+                        "require_json": False,
+                        "required_sections": [],
+                        "require_file_paths": False,
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    variant_path = repo_root / "variant.json"
+    variant_path.write_text(
+        json.dumps(
+            {
+                "name": "agents-japanese-response",
+                "edits": [
+                    {
+                        "path": "AGENTS.md",
+                        "mode": "append",
+                        "text": "\nYou must respond in Japanese.\n",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def _fraction(passes: list[bool]) -> dict[str, float]:
+        true_count = sum(1 for item in passes if item)
+        total = len(passes)
+        return {
+            "true_fraction": true_count / total if total else 0.0,
+            "true_count": float(true_count),
+            "false_count": float(total - true_count),
+            "count": float(total),
+        }
+
+    class FakeEvaluation:
+        def __init__(self, name, dataset, scorers):
+            del scorers
+            self.name = name
+            self.dataset = dataset
+
+        async def evaluate(self, model):
+            contains_passes: list[bool] = []
+            forbidden_passes: list[bool] = []
+            max_char_passes: list[bool] = []
+            token_totals: list[int] = []
+            latencies: list[float] = []
+
+            for case in self.dataset:
+                started = perf_counter()
+                output = model.predict(case["prompt"])
+                latencies.append(perf_counter() - started)
+                contains_passes.append(
+                    codex_evals.score_contains_all(
+                        output["text"], case.get("must_contain", [])
+                    )["pass"]
+                )
+                forbidden_passes.append(
+                    codex_evals.score_forbidden_absent(
+                        output["text"], case.get("must_not_contain", [])
+                    )["pass"]
+                )
+                max_char_passes.append(
+                    codex_evals.score_max_chars(output["text"], case.get("max_chars"))[
+                        "pass"
+                    ]
+                )
+                token_totals.append(int(output["usage"].get("total_tokens", 0)))
+
+            return {
+                "score_contains_all": {"pass": _fraction(contains_passes)},
+                "score_forbidden_absent": {"pass": _fraction(forbidden_passes)},
+                "score_max_chars": {"pass": _fraction(max_char_passes)},
+                "score_token_usage": {
+                    "total_tokens": {
+                        "mean": sum(token_totals) / len(token_totals),
+                    }
+                },
+                "model_latency": {"mean": sum(latencies) / len(latencies)},
+            }
+
+    monkeypatch.setattr(codex_evals.weave, "Evaluation", FakeEvaluation)
+
+    rc = codex_evals.main(
+        [
+            "--cases",
+            str(cases_path),
+            "--variant-file",
+            str(variant_path),
+        ]
+    )
+
+    out = capsys.readouterr()
+    assert rc == 0
+    assert '"variant": "baseline"' in out.out
+    assert '"variant": "agents-japanese-response"' in out.out
+    assert "1. variant: agents-japanese-response" in out.out
+    assert "2. variant: baseline" in out.out

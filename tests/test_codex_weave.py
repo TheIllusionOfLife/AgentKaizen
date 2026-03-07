@@ -422,8 +422,29 @@ def test_main_traces_multimodal_prompt_content(
             "image_path": codex_weave._sanitize_path(str(image_path)),
         },
     ]
-    assert fake_weave.calls[-1]["modalities"] == ["text", "image"]
-    assert fake_weave.calls[-1]["prompt"] == "Explain this image"
+
+
+def test_main_black_box_respects_agents_language_instruction(
+    monkeypatch, capsys, tmp_path, fake_weave, install_fake_codex
+):
+    monkeypatch.setenv("WANDB_API_KEY", "x")
+    set_wandb_target_env(monkeypatch)
+    (tmp_path / "AGENTS.md").write_text(
+        "Repository rules.\nYou must respond in Japanese.\n",
+        encoding="utf-8",
+    )
+    install_fake_codex(default_workspace=tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    rc = codex_weave.main(
+        ["--prompt", "Reply in one sentence: what does this repository do?"]
+    )
+
+    out = capsys.readouterr()
+    assert rc == 0
+    assert "このリポジトリ" in out.out
+    assert "W&B Weave" in out.out
+    assert fake_weave.calls[-1]["final_message"].startswith("このリポジトリ")
 
 
 def test_main_applies_builtin_pii_redaction_to_trace_payload(

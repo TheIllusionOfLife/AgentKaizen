@@ -899,6 +899,98 @@ def test_score_interactive_trace_payload_external_success_keeps_local_diagnostic
     assert result["efficiency_breakdown"]
 
 
+def test_scoring_main_black_box_subagent_backend_emits_json(
+    monkeypatch, capsys, tmp_path
+):
+    trace_file = tmp_path / "trace.json"
+    trace_file.write_text(
+        json.dumps(
+            {
+                "thread_name": "language-steering",
+                "user_task": "Check whether AGENTS.md changes Codex output",
+                "analysis_summary": "The agent completed the session after reading repo instructions.",
+                "analysis": {
+                    "task_completed": True,
+                    "branch_created": False,
+                    "used_uv": False,
+                    "ran_tests": False,
+                    "tool_call_count": 2,
+                    "user_correction_count": 0,
+                    "clarification_question_count": 0,
+                    "assistant_turn_count": 1,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("WANDB_API_KEY", "x")
+    set_wandb_target_env(monkeypatch)
+    monkeypatch.setattr(codex_interactive_scoring.weave, "init", lambda _project: None)
+    monkeypatch.setattr(codex_interactive_scoring.weave, "op", lambda: lambda fn: fn)
+
+    rc = codex_interactive_scoring.main(["--trace-file", str(trace_file), "--json"])
+
+    out = capsys.readouterr()
+    payload = json.loads(out.out)
+    assert rc == 0
+    assert payload["scorer_backend"] == "subagent"
+    assert payload["optimization_relevance"] == "agents"
+    assert (
+        payload["derived_user_task"] == "Check whether AGENTS.md changes Codex output"
+    )
+
+
+def test_scoring_main_black_box_external_backend_uses_codex_runner(
+    monkeypatch, capsys, tmp_path, install_fake_codex
+):
+    trace_file = tmp_path / "trace.json"
+    trace_file.write_text(
+        json.dumps(
+            {
+                "thread_name": "language-steering",
+                "user_task": "Check whether AGENTS.md changes Codex output",
+                "analysis_summary": "The agent completed the session after reading repo instructions.",
+                "analysis": {
+                    "task_completed": True,
+                    "branch_created": True,
+                    "used_uv": True,
+                    "ran_tests": True,
+                    "tool_call_count": 3,
+                    "user_correction_count": 0,
+                    "clarification_question_count": 0,
+                    "assistant_turn_count": 1,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("WANDB_API_KEY", "x")
+    set_wandb_target_env(monkeypatch)
+    monkeypatch.setattr(codex_interactive_scoring.weave, "init", lambda _project: None)
+    monkeypatch.setattr(codex_interactive_scoring.weave, "op", lambda: lambda fn: fn)
+    install_fake_codex(default_workspace=tmp_path)
+
+    rc = codex_interactive_scoring.main(
+        [
+            "--trace-file",
+            str(trace_file),
+            "--scoring-backend",
+            "external",
+            "--json",
+        ]
+    )
+
+    out = capsys.readouterr()
+    payload = json.loads(out.out)
+    assert rc == 0
+    assert payload["scorer_backend"] == "external"
+    assert payload["judge_status"] == "ok"
+    assert payload["optimization_relevance"] == "agents"
+    assert payload["task_success"] == 0.91
+
+
 def test_score_interactive_trace_payload_falls_back_when_repair_command_fails(
     monkeypatch,
 ):
