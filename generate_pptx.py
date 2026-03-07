@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from pptx import Presentation
 from pptx.dml.color import RGBColor
 from pptx.enum.shapes import MSO_SHAPE
@@ -799,8 +801,8 @@ def main() -> None:
     build_slide7_experiment(prs)
     build_slide8_future(prs)
 
-    output_path = "AgentKaizen_Presentation.pptx"
-    prs.save(output_path)
+    output_path = Path(__file__).resolve().parent / "AgentKaizen_Presentation.pptx"
+    prs.save(str(output_path))
     print(f"Saved: {output_path}")
 
 
