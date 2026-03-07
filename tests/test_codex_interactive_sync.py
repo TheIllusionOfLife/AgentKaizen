@@ -1151,6 +1151,228 @@ def test_build_interactive_analysis_counts_only_invocations():
     assert analysis["tool_call_count"] == 1
 
 
+def test_recover_orphaned_sessions_skips_sessions_before_watermark(tmp_path):
+    session_root = tmp_path / "sessions"
+    session_dir = session_root / "2026" / "03" / "06"
+    session_dir.mkdir(parents=True)
+    session_id = "019cc148-old-session"
+    session_file = session_dir / f"rollout-{session_id}.jsonl"
+    session_file.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "timestamp": "2026-03-06T01:00:00Z",
+                        "type": "session_meta",
+                        "payload": {"id": session_id},
+                    }
+                ),
+                json.dumps(
+                    {
+                        "timestamp": "2026-03-06T01:05:00Z",
+                        "type": "event_msg",
+                        "payload": {"type": "task_complete"},
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    rows = codex_interactive_sync.recover_orphaned_sessions(
+        session_root=session_root,
+        indexed_session_ids=set(),
+        state={
+            "processed_session_ids": [],
+            "last_processed_updated_at": "2026-03-06T02:00:00Z",
+        },
+        now=datetime(2026, 3, 6, 4, 0, 0, tzinfo=UTC),
+        quiet_seconds=0,
+    )
+
+    assert rows == []
+
+
+def test_recover_orphaned_sessions_includes_sessions_after_watermark(tmp_path):
+    session_root = tmp_path / "sessions"
+    session_dir = session_root / "2026" / "03" / "06"
+    session_dir.mkdir(parents=True)
+    session_id = "019cc148-new-session"
+    session_file = session_dir / f"rollout-{session_id}.jsonl"
+    session_file.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "timestamp": "2026-03-06T03:00:00Z",
+                        "type": "session_meta",
+                        "payload": {"id": session_id},
+                    }
+                ),
+                json.dumps(
+                    {
+                        "timestamp": "2026-03-06T03:05:00Z",
+                        "type": "event_msg",
+                        "payload": {"type": "task_complete"},
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    rows = codex_interactive_sync.recover_orphaned_sessions(
+        session_root=session_root,
+        indexed_session_ids=set(),
+        state={
+            "processed_session_ids": [],
+            "last_processed_updated_at": "2026-03-06T02:00:00Z",
+        },
+        now=datetime(2026, 3, 6, 4, 0, 0, tzinfo=UTC),
+        quiet_seconds=0,
+    )
+
+    assert len(rows) == 1
+    assert rows[0]["id"] == session_id
+
+
+def test_recover_orphaned_sessions_skips_sessions_at_watermark(tmp_path):
+    session_root = tmp_path / "sessions"
+    session_dir = session_root / "2026" / "03" / "06"
+    session_dir.mkdir(parents=True)
+    session_id = "019cc148-exact-session"
+    session_file = session_dir / f"rollout-{session_id}.jsonl"
+    session_file.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "timestamp": "2026-03-06T02:00:00Z",
+                        "type": "session_meta",
+                        "payload": {"id": session_id},
+                    }
+                ),
+                json.dumps(
+                    {
+                        "timestamp": "2026-03-06T02:00:00Z",
+                        "type": "event_msg",
+                        "payload": {"type": "task_complete"},
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    rows = codex_interactive_sync.recover_orphaned_sessions(
+        session_root=session_root,
+        indexed_session_ids=set(),
+        state={
+            "processed_session_ids": [],
+            "last_processed_updated_at": "2026-03-06T02:00:00Z",
+        },
+        now=datetime(2026, 3, 6, 4, 0, 0, tzinfo=UTC),
+        quiet_seconds=0,
+    )
+
+    assert rows == []
+
+
+def test_image_url_file_uri_sanitized(tmp_path):
+    session_file = tmp_path / "rollout.jsonl"
+    session_file.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "timestamp": "2026-03-06T00:00:00Z",
+                        "type": "session_meta",
+                        "payload": {"id": "abc", "cwd": "/repo"},
+                    }
+                ),
+                json.dumps(
+                    {
+                        "timestamp": "2026-03-06T00:00:01Z",
+                        "type": "response_item",
+                        "payload": {
+                            "type": "message",
+                            "role": "user",
+                            "content": [
+                                {"type": "input_text", "text": "Check image"},
+                                {
+                                    "type": "input_image",
+                                    "image_url": "file:///Users/testuser/images/pic.png",
+                                },
+                            ],
+                        },
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    trace = codex_interactive_sync.build_interactive_trace(
+        session_file=session_file,
+        thread_name="demo",
+        redactor=codex_interactive_sync.build_redactor([]),
+    )
+
+    url = trace["messages"][0]["content_blocks"][1]["image_url"]
+    assert "testuser" not in url
+    assert "[REDACTED]" in url
+
+
+def test_image_url_https_not_sanitized(tmp_path):
+    session_file = tmp_path / "rollout.jsonl"
+    session_file.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "timestamp": "2026-03-06T00:00:00Z",
+                        "type": "session_meta",
+                        "payload": {"id": "abc", "cwd": "/repo"},
+                    }
+                ),
+                json.dumps(
+                    {
+                        "timestamp": "2026-03-06T00:00:01Z",
+                        "type": "response_item",
+                        "payload": {
+                            "type": "message",
+                            "role": "user",
+                            "content": [
+                                {"type": "input_text", "text": "Check image"},
+                                {
+                                    "type": "input_image",
+                                    "image_url": "https://cdn.test/pic.png",
+                                },
+                            ],
+                        },
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    trace = codex_interactive_sync.build_interactive_trace(
+        session_file=session_file,
+        thread_name="demo",
+        redactor=codex_interactive_sync.build_redactor([]),
+        redaction_enabled=False,
+    )
+
+    url = trace["messages"][0]["content_blocks"][1]["image_url"]
+    assert url == "https://cdn.test/pic.png"
+
+
 def test_build_interactive_analysis_handles_invalid_shell_syntax():
     analysis = codex_interactive_sync._build_interactive_analysis(
         messages=[],

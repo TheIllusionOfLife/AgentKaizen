@@ -10,5 +10,6 @@ from agentkaizen.core import (  # noqa: F401
     configure_weave_pii_redaction,
     ensure_wandb_api_key,
     parse_codex_jsonl,
+    resolve_weave_project,
 )
-from agentkaizen.oneshot import build_codex_command, main, resolve_weave_project  # noqa: F401
+from agentkaizen.oneshot import build_codex_command, main  # noqa: F401

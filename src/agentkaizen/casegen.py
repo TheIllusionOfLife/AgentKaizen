@@ -244,14 +244,19 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    from agentkaizen.config import load_config, merge_cli_args
+
     parser = _build_parser()
     args = parser.parse_args(argv)
+
+    config = load_config()
+    config = merge_cli_args(config, args)
 
     if not ensure_wandb_api_key():
         print("WANDB_API_KEY is required to generate cases.", file=sys.stderr)
         return 2
     try:
-        project_path = resolve_weave_project(args.entity, args.project)
+        project_path = resolve_weave_project(config.entity, config.project)
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2

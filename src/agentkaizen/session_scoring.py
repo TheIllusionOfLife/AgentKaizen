@@ -652,7 +652,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--judge-model", help="Codex model for the session judge")
     parser.add_argument(
         "--scoring-backend",
-        default=DEFAULT_SCORING_BACKEND,
+        default=None,
         choices=sorted(ALLOWED_SCORING_BACKENDS),
         help="Scoring backend to use; subagent is the default fast path and external uses codex exec.",
     )
@@ -661,19 +661,24 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Emit the raw JSON scoring payload instead of the human summary.",
     )
-    parser.add_argument("--timeout-seconds", type=int, default=300)
+    parser.add_argument("--timeout-seconds", type=int, default=None)
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
+    from agentkaizen.config import load_config, merge_cli_args
+
     parser = _build_parser()
     args = parser.parse_args(argv)
+
+    config = load_config()
+    config = merge_cli_args(config, args, aliases={"judge_model": "model"})
 
     if not ensure_wandb_api_key():
         print("WANDB_API_KEY is required to score interactive traces.", file=sys.stderr)
         return 2
     try:
-        project_path = resolve_weave_project(args.entity, args.project)
+        project_path = resolve_weave_project(config.entity, config.project)
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
@@ -690,9 +695,9 @@ def main(argv: list[str] | None = None) -> int:
     def score_interactive_trace(trace_payload: dict[str, Any]) -> dict[str, Any]:
         return score_interactive_trace_payload(
             trace_payload,
-            scoring_backend=args.scoring_backend,
-            judge_model=args.judge_model,
-            timeout_seconds=args.timeout_seconds,
+            scoring_backend=config.scoring_backend,
+            judge_model=config.model,
+            timeout_seconds=config.timeout_seconds,
         )
 
     result = score_interactive_trace(trace)

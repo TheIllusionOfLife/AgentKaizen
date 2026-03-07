@@ -10,6 +10,7 @@ import re
 import shlex
 import sys
 import time
+import urllib.parse
 from datetime import UTC, datetime, timedelta
 from typing import Any, Callable
 
@@ -97,6 +98,17 @@ def _flatten_message_content(value: Any) -> str:
     return str(value)
 
 
+def _sanitize_image_url(url: str) -> str:
+    """Sanitize file:// URIs to avoid leaking absolute local paths."""
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme == "file":
+        local_path = urllib.parse.unquote(parsed.path)
+        sanitized = _sanitize_path(local_path)
+        encoded = urllib.parse.quote(sanitized, safe="/[]")
+        return urllib.parse.urlunparse(parsed._replace(path=encoded))
+    return url
+
+
 def _normalize_content_blocks(value: Any) -> list[dict[str, Any]]:
     if isinstance(value, str):
         return [{"type": "input_text", "text": value}]
@@ -113,7 +125,9 @@ def _normalize_content_blocks(value: Any) -> list[dict[str, Any]]:
             if "text" in item and item.get("text") is not None:
                 normalized["text"] = str(item.get("text"))
             if "image_url" in item and item.get("image_url") is not None:
-                normalized["image_url"] = str(item.get("image_url"))
+                normalized["image_url"] = _sanitize_image_url(
+                    str(item.get("image_url"))
+                )
             if "image_path" in item and item.get("image_path") is not None:
                 normalized["image_path"] = pathlib.Path(
                     str(item.get("image_path"))
@@ -236,6 +250,13 @@ def recover_orphaned_sessions(
     now_dt = now or datetime.now(UTC)
     quiet_cutoff = now_dt - timedelta(seconds=quiet_seconds)
     processed_ids = set(state.get("processed_session_ids", []))
+    watermark_raw = state.get("last_processed_updated_at")
+    watermark_dt: datetime | None = None
+    if watermark_raw:
+        try:
+            watermark_dt = parse_iso8601(str(watermark_raw))
+        except ValueError:
+            pass
     recovered: list[dict[str, Any]] = []
 
     for session_file in sorted(session_root.rglob("*.jsonl")):
@@ -297,6 +318,8 @@ def recover_orphaned_sessions(
         except ValueError:
             continue
         if updated_dt > quiet_cutoff:
+            continue
+        if watermark_dt and updated_dt <= watermark_dt:
             continue
         recovered.append(
             {
@@ -992,6 +1015,7 @@ def _run_sync_once(
             discovery_metadata={
                 "discovery_source": str(row.get("discovery_source", "index")),
                 "index_present": bool(row.get("index_present", True)),
+                "updated_at": str(row.get("updated_at", "")),
             },
         )
         ingest_interactive_session_traced(trace_payload)
@@ -1010,14 +1034,19 @@ def _run_sync_once(
 
 
 def main(argv: list[str] | None = None) -> int:
+    from agentkaizen.config import load_config, merge_cli_args
+
     parser = _build_parser()
     args = parser.parse_args(argv)
+
+    config = load_config()
+    config = merge_cli_args(config, args)
 
     if not ensure_wandb_api_key():
         print("WANDB_API_KEY is required to sync interactive traces.", file=sys.stderr)
         return 2
     try:
-        project_path = resolve_weave_project(args.entity, args.project)
+        project_path = resolve_weave_project(config.entity, config.project)
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2

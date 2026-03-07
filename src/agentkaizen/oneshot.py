@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import subprocess  # noqa: F401  (re-exported for test patchability)
 import sys
 
@@ -21,29 +20,16 @@ from agentkaizen.core import (
     build_prompt_content,
     configure_weave_pii_redaction,
     ensure_wandb_api_key,
-    ensure_wandb_env,
-    infer_wandb_entity,
+    ensure_wandb_env,  # noqa: F401  (re-exported for test access)
+    infer_wandb_entity,  # noqa: F401  (re-exported for test patchability)
     load_wandb_api_key_from_env_file,  # noqa: F401  (re-exported for test access)
     load_wandb_env_from_env_file,  # noqa: F401  (re-exported for test access)
     parse_codex_jsonl,  # noqa: F401  (re-exported for test access)
+    resolve_weave_project,  # noqa: F401  (re-exported for test patchability)
     sanitize_command,
     summarize_modalities,
 )
 from agentkaizen.scoring import evaluate_output
-
-
-def resolve_weave_project(entity: str | None, project: str | None) -> str:
-    """Resolve W&B project path, using local infer_wandb_entity for patchability."""
-    ensure_wandb_env()
-    resolved_entity = entity or os.environ.get("WANDB_ENTITY") or infer_wandb_entity()
-    resolved_project = project or os.environ.get("WANDB_PROJECT")
-    if resolved_entity and not os.environ.get("WANDB_ENTITY"):
-        os.environ["WANDB_ENTITY"] = resolved_entity
-    if resolved_entity and resolved_project:
-        return f"{resolved_entity}/{resolved_project}"
-    raise ValueError(
-        "W&B project resolution requires WANDB_PROJECT and an entity. Pass --entity/--project, set WANDB_ENTITY/WANDB_PROJECT, or put them in .env.local. WANDB_ENTITY can be inferred from your logged-in W&B account, but WANDB_PROJECT must be set explicitly."
-    )
 
 
 def build_codex_command(
@@ -54,20 +40,17 @@ def build_codex_command(
     image_paths: list[str] | None = None,
     codex_args: list[str] | None = None,
 ) -> list[str]:
-    command = ["codex", "exec", "--json"]
-    if model:
-        command.extend(["--model", model])
-    if sandbox:
-        command.extend(["--sandbox", sandbox])
-    if profile:
-        command.extend(["--profile", profile])
-    if image_paths:
-        for image_path in image_paths:
-            command.extend(["--image", image_path])
-    if codex_args:
-        command.extend(codex_args)
-    command.append(prompt)
-    return command
+    """Backward-compat wrapper; delegates to CodexRunner.build_command()."""
+    from agentkaizen.runners.codex import CodexRunner
+
+    runner = CodexRunner(
+        model=model,
+        sandbox=sandbox,
+        profile=profile,
+        image_paths=image_paths or [],
+        extra_args=codex_args or [],
+    )
+    return runner.build_command(prompt)
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:
@@ -134,21 +117,26 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--timeout-seconds",
         type=int,
-        default=300,
-        help="Timeout for codex exec in seconds",
+        default=None,
+        help="Timeout for codex exec in seconds (default: 300)",
     )
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
+    from agentkaizen.config import load_config, merge_cli_args
+
     parser = _build_arg_parser()
     args = parser.parse_args(argv)
+
+    config = load_config()
+    config = merge_cli_args(config, args)
 
     if not ensure_wandb_api_key():
         print("WANDB_API_KEY is required to send traces to W&B.", file=sys.stderr)
         return 2
     try:
-        project_path = resolve_weave_project(args.entity, args.project)
+        project_path = resolve_weave_project(config.entity, config.project)
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
@@ -161,8 +149,8 @@ def main(argv: list[str] | None = None) -> int:
     weave.init(project_path)
 
     runner = get_runner(
-        "codex",
-        model=args.model,
+        config.agent,
+        model=config.model,
         sandbox=args.sandbox,
         profile=args.profile,
         image_paths=args.image,
@@ -173,7 +161,7 @@ def main(argv: list[str] | None = None) -> int:
     def run_codex_exec_traced() -> dict:
         command = runner.build_command(prompt)
         try:
-            result = runner.run(prompt, timeout_seconds=args.timeout_seconds)
+            result = runner.run(prompt, timeout_seconds=config.timeout_seconds)
         except AgentRunError as exc:
             return {
                 "command": sanitize_command(command),

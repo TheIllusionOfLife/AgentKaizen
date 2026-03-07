@@ -59,6 +59,15 @@ export WANDB_PROJECT=your-weave-project
 
 All commands in this repo require a W&B project. The entity can come from `--entity`, `WANDB_ENTITY`, `.env.local`, or your logged-in W&B account. If you do not want to set environment variables, pass `--entity` and `--project` explicitly on each command.
 
+AgentKaizen-specific environment variables (override `[tool.agentkaizen]` defaults when pyproject.toml is absent):
+- `AGENTKAIZEN_AGENT`: agent runner to use (`codex` or `claude-code`)
+- `AGENTKAIZEN_MODEL`: model name passed to the agent CLI
+- `AGENTKAIZEN_ENTITY`: W&B entity (also falls back to `WANDB_ENTITY`)
+- `AGENTKAIZEN_PROJECT`: W&B project (also falls back to `WANDB_PROJECT`)
+- `AGENTKAIZEN_TIMEOUT_SECONDS`: timeout per agent invocation
+- `AGENTKAIZEN_CASES`: default eval case directory
+- `AGENTKAIZEN_SCORING_BACKEND`: scoring backend (`subagent` or `external`)
+
 Useful optional Weave environment variables:
 - `WANDB_BASE_URL`: use a custom or self-hosted W&B base URL
 - `WEAVE_PARALLELISM`: tune eval concurrency for larger `codex-eval` runs
@@ -83,7 +92,7 @@ timeout_seconds = 300
 scoring_backend = "subagent"
 ```
 
-Precedence: CLI flags > `[tool.agentkaizen]` > env vars > built-in defaults. Changing `agent` here switches every `agentkaizen run` and `agentkaizen eval` invocation to the specified agent without needing to pass `--agent` each time. Config is loaded by `src/agentkaizen/config.py` and merged into the eval/run config before the eval loop starts.
+Precedence: CLI flags > `[tool.agentkaizen]` > `AGENTKAIZEN_*` env vars > `WANDB_*` env vars (entity/project only) > built-in defaults. Changing `agent` here switches every `agentkaizen run` and `agentkaizen eval` invocation to the specified agent without needing to pass `--agent` each time. Config is loaded by `src/agentkaizen/config.py` and merged into the eval/run config before the eval loop starts.
 
 ## Main Workflows
 ### Trace a one-shot agent run
