@@ -7,6 +7,21 @@ import re
 from typing import Any
 
 
+__all__ = [
+    "score_contains_all",
+    "score_forbidden_absent",
+    "score_exact_match",
+    "score_max_chars",
+    "score_min_chars",
+    "score_json_validity",
+    "score_required_sections",
+    "score_required_content_groups",
+    "score_file_path_citations",
+    "score_token_usage",
+    "evaluate_output",
+]
+
+
 def _extract_text(output: str | dict[str, Any]) -> str:
     if isinstance(output, dict):
         value = output.get("text", "")

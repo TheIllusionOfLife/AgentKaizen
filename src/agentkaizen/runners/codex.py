@@ -58,10 +58,15 @@ class CodexRunner:
                 f"codex exec timed out after {timeout_seconds} seconds"
             ) from exc
         parsed = parse_codex_jsonl(proc.stdout.splitlines())
+        input_tokens = int(parsed.usage.get("input_tokens") or 0)
+        output_tokens = int(parsed.usage.get("output_tokens") or 0)
+        total_tokens = int(
+            parsed.usage.get("total_tokens") or (input_tokens + output_tokens)
+        )
         usage = AgentUsage(
-            input_tokens=int(parsed.usage.get("input_tokens") or 0),
-            output_tokens=int(parsed.usage.get("output_tokens") or 0),
-            total_tokens=int(parsed.usage.get("total_tokens") or 0),
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            total_tokens=total_tokens,
         )
         return AgentResult(
             final_message=parsed.final_message,

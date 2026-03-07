@@ -27,6 +27,7 @@ DEFAULT_PII_REDACTION_FIELDS = [
     "input_content",
     "final_message",
     "stderr",
+    "command",
     "content",
     "content_blocks",
     "messages",

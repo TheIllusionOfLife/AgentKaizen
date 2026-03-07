@@ -84,6 +84,14 @@ def main(argv: list[str] | None = None) -> int:
                 file=sys.stderr,
             )
             return 1
+        if rest[0] in ("-h", "--help"):
+            print(
+                "agentkaizen session — interactive session subcommands\n\n"
+                "  agentkaizen session sync    Sync interactive sessions to Weave\n"
+                "  agentkaizen session score   Score an interactive session trace\n\n"
+                "Pass --help after a subcommand for its own usage.\n"
+            )
+            return 0
         if rest[0] == "sync":
             return _session_sync_main(rest[1:])
         if rest[0] == "score":

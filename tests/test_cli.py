@@ -98,6 +98,20 @@ def test_cli_session_no_subcommand_shows_help_and_fails(capsys):
     assert "session" in (out.out + out.err).lower()
 
 
+def test_cli_session_help_flag_returns_zero(capsys):
+    rc = cli.main(["session", "--help"])
+    out = capsys.readouterr()
+    assert rc == 0
+    assert "session" in (out.out + out.err).lower()
+
+
+def test_cli_session_dash_h_flag_returns_zero(capsys):
+    rc = cli.main(["session", "-h"])
+    out = capsys.readouterr()
+    assert rc == 0
+    assert "session" in (out.out + out.err).lower()
+
+
 # ---------------------------------------------------------------------------
 # Unknown subcommand
 # ---------------------------------------------------------------------------

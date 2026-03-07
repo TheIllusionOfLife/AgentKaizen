@@ -510,7 +510,6 @@ def _extract_agent_message_text(stdout: str) -> str:
 def _run_codex_prompt(
     prompt: str,
     *,
-    codex_bin: str,
     model: str | None,
     timeout_seconds: int,
 ) -> str:
@@ -531,14 +530,13 @@ def _run_codex_prompt(
 def run_codex_judge(
     trace: dict[str, Any],
     *,
-    codex_bin: str = "codex",
+    codex_bin: str = "codex",  # noqa: ARG001  (accepted for backward compat; runner handles execution)
     model: str | None = None,
     timeout_seconds: int = 300,
 ) -> dict[str, Any]:
     try:
         raw_response = _run_codex_prompt(
             build_judge_prompt(trace),
-            codex_bin=codex_bin,
             model=model,
             timeout_seconds=timeout_seconds,
         )
@@ -550,7 +548,6 @@ def run_codex_judge(
         try:
             repair_response = _run_codex_prompt(
                 build_judge_repair_prompt(raw_response, str(exc)),
-                codex_bin=codex_bin,
                 model=model,
                 timeout_seconds=timeout_seconds,
             )

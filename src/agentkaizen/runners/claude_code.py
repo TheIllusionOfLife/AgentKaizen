@@ -45,6 +45,11 @@ class ClaudeCodeRunner:
                 f"claude exec timed out after {timeout_seconds} seconds"
             ) from exc
 
+        if proc.returncode != 0:
+            raise AgentRunError(
+                f"claude exited with code {proc.returncode}: {proc.stderr[:200]!r}"
+            )
+
         try:
             payload = json.loads(proc.stdout)
         except json.JSONDecodeError as exc:

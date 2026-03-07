@@ -63,7 +63,7 @@ CI runs `pytest`, `ruff check .`, and `ruff format --check .` via `uv run --grou
 
 ### Data flow
 
-```
+```text
 codex exec / interactive sessions / claude -p
         |
    agentkaizen run / agentkaizen session sync   (trace into Weave)
