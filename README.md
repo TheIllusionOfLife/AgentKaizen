@@ -37,7 +37,7 @@ If you are new to Weave, start here:
 ### Requirements
 - Python 3.12+
 - `uv`
-- Codex CLI (`codex`)
+- Codex CLI (`codex`) or Claude Code CLI (`claude`)
 - A W&B account and API key
 
 ### Environment Variables
@@ -68,20 +68,19 @@ Useful optional Weave environment variables:
 
 ### Install
 ```bash
-uv venv .venv
 uv sync --group dev
 ```
 
 ## Main Workflows
-### Trace a `codex exec` run
+### Trace a one-shot agent run
 ```bash
-uv run codex-weave --prompt "Say only: ok"
+uv run agentkaizen run --prompt "Say only: ok"
 ```
 
 Attach one or more images to the initial prompt:
 
 ```bash
-uv run codex-weave \
+uv run agentkaizen run \
   --prompt "Describe the UI issue in this screenshot" \
   --image ./artifacts/screenshot.png
 ```
@@ -89,45 +88,45 @@ uv run codex-weave \
 Read the prompt from stdin:
 
 ```bash
-echo "Say only: ok" | uv run codex-weave --prompt -
+echo "Say only: ok" | uv run agentkaizen run --prompt -
 ```
 
 ### Ingest interactive Codex sessions
 ```bash
-uv run codex-weave-sync-interactive --once
+uv run agentkaizen session sync --once
 ```
 
 Continuous polling mode:
 
 ```bash
-uv run codex-weave-sync-interactive \
+uv run agentkaizen session sync \
   --poll-seconds 15 \
   --quiet-seconds 30
 ```
 
 ### Score an interactive trace
 ```bash
-uv run codex-score-interactive --trace-file path/to/interactive-trace.json
+uv run agentkaizen session score --trace-file path/to/interactive-trace.json
 ```
 
 Structured JSON output:
 
 ```bash
-uv run codex-score-interactive \
+uv run agentkaizen session score \
   --trace-file path/to/interactive-trace.json \
   --json
 ```
 
 ### Generate eval cases from recent traces
 ```bash
-uv run codex-casegen \
+uv run agentkaizen eval casegen \
   --limit 20 \
   --output evals/cases.generated.jsonl
 ```
 
 ### Compare document or config variants
 ```bash
-uv run codex-eval \
+uv run agentkaizen eval \
   --cases evals/cases \
   --variant-file evals/variants/example_add_line_to_readme.json \
   --quality-similar-threshold 0.02 \
@@ -138,12 +137,15 @@ uv run codex-eval \
 Run the Japanese-response `AGENTS.md` experiment:
 
 ```bash
-uv run codex-eval \
+uv run agentkaizen eval \
   --cases evals/cases/language-steering.jsonl \
   --variant-file evals/variants/example_agents_japanese_response.json
 ```
 
-`codex-eval` runs each variant inside a temporary workspace and, unless you already passed it, automatically adds `--skip-git-repo-check` to the Codex invocation.
+`agentkaizen eval` runs each variant inside a temporary workspace and, unless you already passed it, automatically adds `--skip-git-repo-check` to the Codex invocation.
+
+### Legacy entry points (soft-deprecated)
+The old `codex-weave`, `codex-eval`, `codex-casegen`, `codex-weave-sync-interactive`, and `codex-score-interactive` entry points still work and delegate to the same implementations. Prefer the `agentkaizen` subcommands for new workflows.
 
 ## How AgentKaizen Uses Weave
 The important mapping is:
@@ -165,8 +167,8 @@ This is what makes the repo useful: it turns prompt and documentation tuning int
 ### Capability Mapping
 #### 1. Two tracking modes
 This project uses Weave tracing in two distinct modes:
-- one-shot tracing for `codex exec` runs through `codex-weave`
-- full-session ingestion for interactive Codex sessions through `codex-weave-sync-interactive`
+- one-shot tracing for agent runs through `agentkaizen run`
+- full-session ingestion for interactive Codex sessions through `agentkaizen session sync`
 
 The one-shot mode stores structured prompt content, command, event stream, final message, usage, and guardrail results. The interactive mode reconstructs an entire session from local Codex session files and stores structured message content, tool calls, usage, derived task text, and workflow analysis.
 
@@ -201,7 +203,7 @@ Built-in scorers are enabled only when the eval dataset contains the fields they
 - `response_schema` activates built-in JSON/schema validation
 - datasets without those optional fields still run with the deterministic scorers
 
-Models in this repo are application-level Weave models, not provider SDK wrappers. `codex-eval` uses `CodexVariantModel(weave.Model)` to represent a candidate Codex behavior running inside a temporary workspace with specific config and document variants.
+Models in this repo are application-level Weave models, not provider SDK wrappers. `agentkaizen eval` uses `CodexVariantModel(weave.Model)` to represent a candidate agent behavior running inside a temporary workspace with specific config and document variants.
 
 #### 3. Image prompts
 This project now preserves multimodal prompt structure for one-shot `codex exec` runs and interactive session ingestion. Flattened text fields are still retained for backwards compatibility, but traces also keep ordered content blocks and a `modalities` summary.
@@ -237,13 +239,16 @@ The core flow is:
 4. Compare candidate steering changes, such as `AGENTS.md` edits, against the baseline.
 5. Promote the winning changes back into the real repo docs and instructions.
 
-Key entry points:
-- [codex_weave.py](./codex_weave.py)
-- [codex_interactive_sync.py](./codex_interactive_sync.py)
-- [codex_interactive_scoring.py](./codex_interactive_scoring.py)
-- [codex_evals.py](./codex_evals.py)
-- [codex_casegen.py](./codex_casegen.py)
-- [codex_scoring.py](./codex_scoring.py)
+Key modules (all under `src/agentkaizen/`):
+- [`cli.py`](./src/agentkaizen/cli.py) — unified `agentkaizen` entry point
+- [`oneshot.py`](./src/agentkaizen/oneshot.py) — one-shot traced agent run (`agentkaizen run`)
+- [`session_sync.py`](./src/agentkaizen/session_sync.py) — interactive session ingestion
+- [`session_scoring.py`](./src/agentkaizen/session_scoring.py) — interactive trace scoring
+- [`evals.py`](./src/agentkaizen/evals.py) — offline variant comparison
+- [`casegen.py`](./src/agentkaizen/casegen.py) — draft case generation from traces
+- [`scoring.py`](./src/agentkaizen/scoring.py) — shared scorer functions
+- [`core.py`](./src/agentkaizen/core.py) — shared infra: JSONL parser, PII redaction, W&B env
+- [`runners/`](./src/agentkaizen/runners/) — `AgentRunner` protocol + `CodexRunner`, `ClaudeCodeRunner`
 
 ## Repository Docs
 For deeper context, see:
@@ -263,8 +268,8 @@ Run the standard checks before submitting changes:
 
 ```bash
 uv run --group dev pytest
-uv run --with ruff ruff check .
-uv run --with ruff ruff format --check .
+uv run --group dev ruff check .
+uv run --group dev ruff format --check .
 ```
 
 For more on supported Weave environment variables, see:

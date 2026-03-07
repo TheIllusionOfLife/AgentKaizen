@@ -31,23 +31,24 @@ Use `uv` for all Python workflows.
 
 Common commands:
 - `uv sync --group dev`
-- `uv run codex-weave --prompt "Say only: ok"`
-- `uv run codex-weave-sync-interactive --once`
-- `uv run codex-score-interactive --trace-file path/to/interactive-trace.json`
-- `uv run codex-casegen --limit 20 --output evals/cases.generated.jsonl`
-- `uv run codex-eval --cases evals/cases --variant-file evals/variants/<file>.json`
+- `uv run agentkaizen run --prompt "Say only: ok"`
+- `uv run agentkaizen session sync --once`
+- `uv run agentkaizen session score --trace-file path/to/interactive-trace.json`
+- `uv run agentkaizen eval casegen --limit 20 --output evals/cases.generated.jsonl`
+- `uv run agentkaizen eval --cases evals/cases --variant-file evals/variants/<file>.json`
 - `uv run --group dev pytest`
-- `uv run --with ruff ruff check .`
-- `uv run --with ruff ruff format --check .`
+- `uv run --group dev ruff check .`
+- `uv run --group dev ruff format --check .`
 
 ## Architecture Rules
-- Keep top-level modules focused by responsibility.
-- Put shared output and quality checks in `codex_scoring.py`.
-- Keep `codex_weave.py` responsible for traced `codex exec` runs.
-- Keep `codex_interactive_sync.py` responsible for turning local session files into structured Weave traces.
-- Keep `codex_interactive_scoring.py` responsible for analyzing interactive trace payloads, not for ingestion.
-- Keep `codex_evals.py` responsible for offline variant comparison using temporary workspaces.
-- Keep `codex_casegen.py` responsible for turning past traces into draft evaluation cases.
+- Canonical implementations live in `src/agentkaizen/`. Root-level `codex_*.py` files are backward-compat shims only.
+- Put shared output and quality checks in `src/agentkaizen/scoring.py`.
+- Keep `src/agentkaizen/oneshot.py` responsible for traced one-shot agent runs.
+- Keep `src/agentkaizen/session_sync.py` responsible for turning local session files into structured Weave traces.
+- Keep `src/agentkaizen/session_scoring.py` responsible for analyzing interactive trace payloads, not for ingestion.
+- Keep `src/agentkaizen/evals.py` responsible for offline variant comparison using temporary workspaces.
+- Keep `src/agentkaizen/casegen.py` responsible for turning past traces into draft evaluation cases.
+- All agent subprocess calls must go through `agentkaizen.runners.get_runner()`. Never call subprocess directly.
 
 ## Coding Style
 - Python 3.12+
@@ -59,8 +60,9 @@ Common commands:
 ## Testing
 - Framework: `pytest`
 - Preferred command: `uv run --group dev pytest`
-- Lint: `uv run --with ruff ruff check .`
-- Format check: `uv run --with ruff ruff format --check .`
+- Lint: `uv run --group dev ruff check .`
+- Format check: `uv run --group dev ruff format --check .`
+- Test imports use the alias trick: `import agentkaizen.oneshot as codex_weave` — keeps monkeypatching pointing at the canonical module
 
 When changing CLI behavior:
 - add or update tests for exit codes and error messages
@@ -77,12 +79,13 @@ When changing CLI behavior:
 ## Non-Obvious Behaviors
 - W&B entity and project must be passed explicitly or provided through `WANDB_ENTITY` and `WANDB_PROJECT`.
 - `.env.local` is a supported source for `WANDB_API_KEY`, `WANDB_ENTITY`, `WANDB_PROJECT`, and `WANDB_BASE_URL`.
-- `codex exec --json` returns JSONL event streams, not a single JSON object. Reuse `parse_codex_jsonl()` instead of inventing a new parser.
+- `codex exec --json` returns JSONL event streams, not a single JSON object. Reuse `parse_codex_jsonl()` from `agentkaizen.core` instead of inventing a new parser.
 - Interactive sync seeds the state file on the first run and uploads nothing on that initial pass. This prevents backfilling the entire local history unexpectedly.
 - Interactive trace redaction is enabled by default. Preserve that default unless there is a strong reason to change it.
 - Offline evals compare variants inside temporary workspaces. Do not mutate the real repo as part of evaluation logic.
-- `codex-eval` automatically adds `--skip-git-repo-check` to the Codex invocation unless it was already supplied.
+- `agentkaizen eval` automatically adds `--skip-git-repo-check` to the Codex invocation unless it was already supplied.
 - Interactive scoring has two paths: a default structured local analysis path and an older external Codex-judge path. Prefer the default path unless you are intentionally changing the judge behavior.
+- `ClaudeCodeRunner` uses `claude -p <prompt> --output-format json` and parses `{"type": "result", "result": "..."}`. Token usage is not available in JSON output mode.
 - Optional eval case fields must stay optional in the runner:
   - `response_schema` activates Weave's built-in JSON/schema scorers
   - datasets without those fields must still evaluate successfully
