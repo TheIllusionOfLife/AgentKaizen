@@ -71,6 +71,20 @@ Useful optional Weave environment variables:
 uv sync --group dev
 ```
 
+### Repo defaults (`[tool.agentkaizen]`)
+AgentKaizen reads project-level defaults from `pyproject.toml` before any command runs. This is the primary steering surface for choosing the agent and tuning eval behavior — you set it once per project rather than repeating flags on every command.
+
+```toml
+[tool.agentkaizen]
+agent = "codex"          # or "claude-code"
+model = "o4-mini"        # passed to the agent CLI
+cases = "evals/cases"    # default eval case directory
+timeout_seconds = 300
+scoring_backend = "subagent"
+```
+
+Precedence: CLI flags > `[tool.agentkaizen]` > env vars > built-in defaults. Changing `agent` here switches every `agentkaizen run` and `agentkaizen eval` invocation to the specified agent without needing to pass `--agent` each time. Config is loaded by `src/agentkaizen/config.py` and merged into the eval/run config before the eval loop starts.
+
 ## Main Workflows
 ### Trace a one-shot agent run
 ```bash

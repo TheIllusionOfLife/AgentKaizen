@@ -48,6 +48,7 @@ Common commands:
 - Keep `src/agentkaizen/session_scoring.py` responsible for analyzing interactive trace payloads, not for ingestion.
 - Keep `src/agentkaizen/evals.py` responsible for offline variant comparison using temporary workspaces.
 - Keep `src/agentkaizen/casegen.py` responsible for turning past traces into draft evaluation cases.
+- Keep `src/agentkaizen/config.py` responsible for `[tool.agentkaizen]` defaults and precedence (CLI flags > pyproject.toml > env vars > defaults). This is the steering surface that influences agent selection and the eval loop — document any new config keys here and explain how they affect session ingestion or eval flow.
 - All agent subprocess calls must go through `agentkaizen.runners.get_runner()`. Never call subprocess directly.
 
 ## Coding Style
