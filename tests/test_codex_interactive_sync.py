@@ -1151,6 +1151,98 @@ def test_build_interactive_analysis_counts_only_invocations():
     assert analysis["tool_call_count"] == 1
 
 
+def test_image_url_file_uri_sanitized(tmp_path):
+    session_file = tmp_path / "rollout.jsonl"
+    session_file.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "timestamp": "2026-03-06T00:00:00Z",
+                        "type": "session_meta",
+                        "payload": {"id": "abc", "cwd": "/repo"},
+                    }
+                ),
+                json.dumps(
+                    {
+                        "timestamp": "2026-03-06T00:00:01Z",
+                        "type": "response_item",
+                        "payload": {
+                            "type": "message",
+                            "role": "user",
+                            "content": [
+                                {"type": "input_text", "text": "Check image"},
+                                {
+                                    "type": "input_image",
+                                    "image_url": "file:///Users/testuser/images/pic.png",
+                                },
+                            ],
+                        },
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    trace = codex_interactive_sync.build_interactive_trace(
+        session_file=session_file,
+        thread_name="demo",
+        redactor=codex_interactive_sync.build_redactor([]),
+    )
+
+    url = trace["messages"][0]["content_blocks"][1]["image_url"]
+    assert "testuser" not in url
+    assert "[REDACTED]" in url
+
+
+def test_image_url_https_not_sanitized(tmp_path):
+    session_file = tmp_path / "rollout.jsonl"
+    session_file.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "timestamp": "2026-03-06T00:00:00Z",
+                        "type": "session_meta",
+                        "payload": {"id": "abc", "cwd": "/repo"},
+                    }
+                ),
+                json.dumps(
+                    {
+                        "timestamp": "2026-03-06T00:00:01Z",
+                        "type": "response_item",
+                        "payload": {
+                            "type": "message",
+                            "role": "user",
+                            "content": [
+                                {"type": "input_text", "text": "Check image"},
+                                {
+                                    "type": "input_image",
+                                    "image_url": "https://cdn.test/pic.png",
+                                },
+                            ],
+                        },
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    trace = codex_interactive_sync.build_interactive_trace(
+        session_file=session_file,
+        thread_name="demo",
+        redactor=codex_interactive_sync.build_redactor([]),
+        redaction_enabled=False,
+    )
+
+    url = trace["messages"][0]["content_blocks"][1]["image_url"]
+    assert url == "https://cdn.test/pic.png"
+
+
 def test_build_interactive_analysis_handles_invalid_shell_syntax():
     analysis = codex_interactive_sync._build_interactive_analysis(
         messages=[],

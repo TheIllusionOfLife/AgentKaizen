@@ -10,6 +10,7 @@ import re
 import shlex
 import sys
 import time
+import urllib.parse
 from datetime import UTC, datetime, timedelta
 from typing import Any, Callable
 
@@ -97,6 +98,16 @@ def _flatten_message_content(value: Any) -> str:
     return str(value)
 
 
+def _sanitize_image_url(url: str) -> str:
+    """Sanitize file:// URIs to avoid leaking absolute local paths."""
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme == "file":
+        local_path = urllib.parse.unquote(parsed.path)
+        sanitized = _sanitize_path(local_path)
+        return urllib.parse.urlunparse(parsed._replace(path=sanitized))
+    return url
+
+
 def _normalize_content_blocks(value: Any) -> list[dict[str, Any]]:
     if isinstance(value, str):
         return [{"type": "input_text", "text": value}]
@@ -113,7 +124,9 @@ def _normalize_content_blocks(value: Any) -> list[dict[str, Any]]:
             if "text" in item and item.get("text") is not None:
                 normalized["text"] = str(item.get("text"))
             if "image_url" in item and item.get("image_url") is not None:
-                normalized["image_url"] = str(item.get("image_url"))
+                normalized["image_url"] = _sanitize_image_url(
+                    str(item.get("image_url"))
+                )
             if "image_path" in item and item.get("image_path") is not None:
                 normalized["image_path"] = pathlib.Path(
                     str(item.get("image_path"))
@@ -992,6 +1005,7 @@ def _run_sync_once(
             discovery_metadata={
                 "discovery_source": str(row.get("discovery_source", "index")),
                 "index_present": bool(row.get("index_present", True)),
+                "updated_at": str(row.get("updated_at", "")),
             },
         )
         ingest_interactive_session_traced(trace_payload)
