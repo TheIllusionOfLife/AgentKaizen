@@ -142,3 +142,82 @@ def test_merge_cli_args_ignores_unknown_cli_attrs():
     args = Namespace(unknown_field="value", agent=None)
     merged = merge_cli_args(cfg, args)
     assert merged == cfg
+
+
+def test_merge_cli_args_alias_maps_judge_model_to_model():
+    cfg = AgentKaizenConfig(model="old-model")
+    args = Namespace(judge_model="new-model")
+    merged = merge_cli_args(cfg, args, aliases={"judge_model": "model"})
+    assert merged.model == "new-model"
+
+
+def test_merge_cli_args_alias_none_does_not_override():
+    cfg = AgentKaizenConfig(model="keep")
+    args = Namespace(judge_model=None)
+    merged = merge_cli_args(cfg, args, aliases={"judge_model": "model"})
+    assert merged.model == "keep"
+
+
+# ---------------------------------------------------------------------------
+# load_config — env var fallback
+# ---------------------------------------------------------------------------
+
+
+def test_load_config_env_var_fallback(monkeypatch, tmp_path):
+    monkeypatch.setenv("AGENTKAIZEN_MODEL", "env-model")
+    cfg = load_config(tmp_path / "nonexistent.toml")
+    assert cfg.model == "env-model"
+
+
+def test_load_config_pyproject_wins_over_env(monkeypatch, tmp_path):
+    monkeypatch.setenv("AGENTKAIZEN_MODEL", "env-model")
+    toml = tmp_path / "pyproject.toml"
+    toml.write_text(
+        textwrap.dedent("""\
+            [tool.agentkaizen]
+            model = "toml-model"
+        """),
+        encoding="utf-8",
+    )
+    cfg = load_config(toml)
+    assert cfg.model == "toml-model"
+
+
+def test_load_config_env_int_conversion(monkeypatch, tmp_path):
+    monkeypatch.setenv("AGENTKAIZEN_TIMEOUT_SECONDS", "600")
+    cfg = load_config(tmp_path / "nonexistent.toml")
+    assert cfg.timeout_seconds == 600
+
+
+def test_load_config_defaults_apply_without_env_or_pyproject(monkeypatch, tmp_path):
+    for key in (
+        "AGENTKAIZEN_AGENT",
+        "AGENTKAIZEN_MODEL",
+        "AGENTKAIZEN_TIMEOUT_SECONDS",
+        "AGENTKAIZEN_SCORING_BACKEND",
+        "AGENTKAIZEN_CASES",
+        "AGENTKAIZEN_ENTITY",
+        "AGENTKAIZEN_PROJECT",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    for key in ("WANDB_ENTITY", "WANDB_PROJECT"):
+        monkeypatch.delenv(key, raising=False)
+    cfg = load_config(tmp_path / "nonexistent.toml")
+    assert cfg == AgentKaizenConfig()
+
+
+def test_load_config_wandb_env_fallback_for_entity_project(monkeypatch, tmp_path):
+    monkeypatch.setenv("WANDB_ENTITY", "wandb-team")
+    monkeypatch.setenv("WANDB_PROJECT", "wandb-proj")
+    monkeypatch.delenv("AGENTKAIZEN_ENTITY", raising=False)
+    monkeypatch.delenv("AGENTKAIZEN_PROJECT", raising=False)
+    cfg = load_config(tmp_path / "nonexistent.toml")
+    assert cfg.entity == "wandb-team"
+    assert cfg.project == "wandb-proj"
+
+
+def test_load_config_agentkaizen_env_wins_over_wandb_env(monkeypatch, tmp_path):
+    monkeypatch.setenv("WANDB_ENTITY", "wandb-team")
+    monkeypatch.setenv("AGENTKAIZEN_ENTITY", "ak-team")
+    cfg = load_config(tmp_path / "nonexistent.toml")
+    assert cfg.entity == "ak-team"
