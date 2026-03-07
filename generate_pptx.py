@@ -70,10 +70,10 @@ def add_text_box(
     font_name: str = BODY_FONT,
 ) -> TextFrame:
     """Add a text box and return its TextFrame for further paragraph additions."""
-    txBox = slide.shapes.add_textbox(
+    tx_box = slide.shapes.add_textbox(
         Inches(left), Inches(top), Inches(width), Inches(height)
     )
-    tf = txBox.text_frame
+    tf = tx_box.text_frame
     tf.word_wrap = True
     p = tf.paragraphs[0]
     p.text = text
@@ -91,7 +91,7 @@ def add_para(
     font_size: int = 18,
     color: RGBColor = WHITE,
     bold: bool = False,
-    space_before: Pt = Pt(6),
+    space_before: int = Pt(6),
     alignment: PP_ALIGN = PP_ALIGN.LEFT,
     font_name: str = BODY_FONT,
 ) -> None:
