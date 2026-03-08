@@ -1110,3 +1110,222 @@ def test_eval_main_black_box_detects_agents_language_variant(
     assert '"variant": "agents-japanese-response"' in out.out
     assert "1. variant: agents-japanese-response" in out.out
     assert "2. variant: baseline" in out.out
+
+
+# --- New feature tests ---
+
+
+def _make_fake_local_eval(monkeypatch, *, response_text="ok"):
+    """Patch CodexVariantModel and workspace helpers for local-only tests."""
+    monkeypatch.setattr(codex_evals, "ensure_wandb_api_key", lambda: None)
+    monkeypatch.setattr(codex_evals, "HAS_WEAVE", False)
+    monkeypatch.setattr(codex_evals, "copy_workspace", lambda *a, **kw: None)
+    monkeypatch.setattr(
+        codex_evals, "materialize_external_variant_inputs", lambda *a, **kw: {}
+    )
+    monkeypatch.setattr(codex_evals, "apply_variant_edits", lambda *a, **kw: None)
+
+    class FakeModel:
+        def __init__(self, **kwargs):
+            pass
+
+        def predict(self, prompt):
+            return {
+                "text": response_text,
+                "usage": {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2},
+            }
+
+    monkeypatch.setattr(codex_evals, "CodexVariantModel", FakeModel)
+
+
+def test_show_outputs_flag_prints_comparison_block(monkeypatch, capsys, tmp_path):
+    _make_fake_local_eval(monkeypatch)
+
+    cases_path = tmp_path / "cases.jsonl"
+    cases_path.write_text(
+        json.dumps(
+            {
+                "prompt": "p1",
+                "must_contain": [],
+                "must_not_contain": [],
+                "max_chars": 100,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    rc = codex_evals.main(["--cases", str(cases_path), "--show-outputs"])
+
+    out = capsys.readouterr()
+    assert rc == 0
+    assert "Case 1/1" in out.out
+    assert "BASELINE" in out.out
+
+
+def test_edit_flag_creates_inline_variant(monkeypatch, capsys, tmp_path):
+    _make_fake_local_eval(monkeypatch)
+
+    cases_path = tmp_path / "cases.jsonl"
+    cases_path.write_text(
+        json.dumps(
+            {
+                "prompt": "p1",
+                "must_contain": [],
+                "must_not_contain": [],
+                "max_chars": 100,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    rc = codex_evals.main(
+        [
+            "--cases",
+            str(cases_path),
+            "--edit",
+            "AGENTS.md:append:You must respond in Japanese.",
+            "--variant-name",
+            "japanese",
+        ]
+    )
+
+    out = capsys.readouterr()
+    assert rc == 0
+    assert '"variant": "japanese"' in out.out
+
+
+def test_edit_flag_rejects_bad_format(monkeypatch, capsys, tmp_path):
+    _make_fake_local_eval(monkeypatch)
+
+    cases_path = tmp_path / "cases.jsonl"
+    cases_path.write_text(
+        json.dumps(
+            {"prompt": "p", "must_contain": [], "must_not_contain": [], "max_chars": 10}
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    rc = codex_evals.main(["--cases", str(cases_path), "--edit", "bad"])
+
+    assert rc == 2
+    out = capsys.readouterr()
+    assert "PATH:MODE" in out.err
+
+
+def test_edit_flag_rejects_invalid_mode(monkeypatch, capsys, tmp_path):
+    _make_fake_local_eval(monkeypatch)
+
+    cases_path = tmp_path / "cases.jsonl"
+    cases_path.write_text(
+        json.dumps(
+            {"prompt": "p", "must_contain": [], "must_not_contain": [], "max_chars": 10}
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    rc = codex_evals.main(
+        ["--cases", str(cases_path), "--edit", "AGENTS.md:bad_mode:text"]
+    )
+
+    assert rc == 2
+    out = capsys.readouterr()
+    assert "bad_mode" in out.err
+
+
+def test_inline_prompt_used_when_no_cases_file(monkeypatch, capsys, tmp_path):
+    _make_fake_local_eval(monkeypatch)
+    monkeypatch.chdir(tmp_path)
+
+    codex_evals.main(
+        [
+            "--prompt",
+            "What is this repo?",
+            "--must-contain",
+            "AgentKaizen",
+        ]
+    )
+
+    out = capsys.readouterr()
+    assert "variant: baseline" in out.out
+
+
+def test_allow_unsafe_scorer_file_loads_scorers(monkeypatch, capsys, tmp_path):
+    _make_fake_local_eval(monkeypatch)
+
+    cases_path = tmp_path / "cases.jsonl"
+    cases_path.write_text(
+        json.dumps(
+            {
+                "prompt": "p1",
+                "must_contain": [],
+                "must_not_contain": [],
+                "max_chars": 100,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    scorer_file = tmp_path / "my_scorer.py"
+    scorer_file.write_text(
+        "def score_custom(output, **_):\n"
+        "    t = output.get('text', '') if isinstance(output, dict) else str(output)\n"
+        "    return {'custom_pass': len(t) > 0}\n"
+        "SCORERS = [score_custom]\n",
+        encoding="utf-8",
+    )
+
+    rc = codex_evals.main(
+        [
+            "--cases",
+            str(cases_path),
+            "--allow-unsafe-scorer-file",
+            str(scorer_file),
+            "--show-outputs",
+        ]
+    )
+
+    out = capsys.readouterr()
+    assert rc == 0
+    assert "score_custom" in out.out
+
+
+def test_allow_unsafe_scorer_file_missing_scorers_raises(monkeypatch, capsys, tmp_path):
+    _make_fake_local_eval(monkeypatch)
+
+    cases_path = tmp_path / "cases.jsonl"
+    cases_path.write_text(
+        json.dumps(
+            {
+                "prompt": "p1",
+                "must_contain": [],
+                "must_not_contain": [],
+                "max_chars": 10,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    scorer_file = tmp_path / "bad_scorer.py"
+    scorer_file.write_text(
+        "def score_custom(output, **_): return {}\n",
+        encoding="utf-8",
+    )
+
+    rc = codex_evals.main(
+        [
+            "--cases",
+            str(cases_path),
+            "--allow-unsafe-scorer-file",
+            str(scorer_file),
+        ]
+    )
+
+    assert rc == 2
+    out = capsys.readouterr()
+    assert "SCORERS" in out.err

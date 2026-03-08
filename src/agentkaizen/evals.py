@@ -2,16 +2,19 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import importlib.util
 import json
 import shutil
 import subprocess  # noqa: F401  (re-exported for test patchability)
 import sys
 import tempfile
+import textwrap
 from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, create_model
 
+from agentkaizen._llm_judge import LLMJudgeScorer
 from agentkaizen._weave_compat import HAS_WEAVE, weave_init, weave_op
 
 from agentkaizen._local_eval import (
@@ -537,6 +540,71 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Timeout for each codex exec call in seconds (default: 300)",
     )
+    parser.add_argument(
+        "--show-outputs",
+        action="store_true",
+        default=False,
+        help="Show actual response text and per-case scorer results",
+    )
+    parser.add_argument(
+        "--edit",
+        action="append",
+        default=[],
+        metavar="PATH:MODE:TEXT",
+        help="Inline variant file edit (repeatable). Format: PATH:MODE:TEXT where MODE is append|prepend|replace",
+    )
+    parser.add_argument(
+        "--variant-name",
+        default="custom",
+        help="Name for the inline variant created by --edit (default: custom)",
+    )
+    parser.add_argument(
+        "--prompt",
+        action="append",
+        default=[],
+        dest="inline_prompts",
+        help="Inline eval case prompt (repeatable). Chain with --must-contain / --max-chars etc.",
+    )
+    parser.add_argument(
+        "--must-contain",
+        action="append",
+        default=[],
+        help="must_contain term for the preceding --prompt (repeatable)",
+    )
+    parser.add_argument(
+        "--must-not-contain",
+        action="append",
+        default=[],
+        help="must_not_contain term for the preceding --prompt (repeatable)",
+    )
+    parser.add_argument(
+        "--max-chars",
+        type=int,
+        default=None,
+        help="max_chars for the preceding --prompt",
+    )
+    parser.add_argument(
+        "--judge-rubric",
+        default=None,
+        help="Global LLM-judge rubric (per-case judge_rubric field overrides)",
+    )
+    parser.add_argument(
+        "--judge-runner",
+        default="claude-code",
+        help="Runner for LLM judge: claude-code|codex (default: claude-code)",
+    )
+    parser.add_argument(
+        "--judge-model",
+        default=None,
+        help="Model for judge runner",
+    )
+    parser.add_argument(
+        "--allow-unsafe-scorer-file",
+        action="append",
+        default=[],
+        metavar="PATH",
+        help="Load scorers from Python file (explicit unsafe opt-in; file must define SCORERS list)",
+    )
     return parser
 
 
@@ -855,16 +923,189 @@ def render_ranked_summary_table(ranked: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+_VALID_EDIT_MODES = {"append", "prepend", "replace"}
+
+
+def _parse_edit_flag(raw: str) -> dict[str, str]:
+    parts = raw.split(":", 2)
+    if len(parts) < 2:
+        raise argparse.ArgumentTypeError(
+            f"--edit must be PATH:MODE or PATH:MODE:TEXT (got {raw!r})"
+        )
+    path, mode = parts[0], parts[1]
+    if mode not in _VALID_EDIT_MODES:
+        raise argparse.ArgumentTypeError(
+            f"--edit mode must be one of {sorted(_VALID_EDIT_MODES)} (got {mode!r})"
+        )
+    return {"path": path, "mode": mode, "text": parts[2] if len(parts) > 2 else ""}
+
+
+def _build_inline_cases(argv: list[str]) -> list[dict[str, Any]]:
+    """Parse argv to group --must-contain / --must-not-contain / --max-chars by --prompt."""
+    cases: list[dict[str, Any]] = []
+    current: dict[str, Any] | None = None
+    i = 0
+    while i < len(argv):
+        arg = argv[i]
+        if arg == "--prompt" and i + 1 < len(argv):
+            if current is not None:
+                cases.append(current)
+            i += 1
+            current = {
+                "prompt": argv[i],
+                "must_contain": [],
+                "must_not_contain": [],
+                "max_chars": 2000,
+                "require_json": False,
+                "required_sections": [],
+                "require_file_paths": False,
+            }
+        elif arg == "--must-contain" and i + 1 < len(argv) and current is not None:
+            i += 1
+            current["must_contain"].append(argv[i])
+        elif arg == "--must-not-contain" and i + 1 < len(argv) and current is not None:
+            i += 1
+            current["must_not_contain"].append(argv[i])
+        elif arg == "--max-chars" and i + 1 < len(argv) and current is not None:
+            i += 1
+            current["max_chars"] = int(argv[i])
+        i += 1
+    if current is not None:
+        cases.append(current)
+    return cases
+
+
+def _load_scorer_file(path: str) -> list[Any]:
+    """Load SCORERS list from a Python file (explicit unsafe opt-in)."""
+    spec = importlib.util.spec_from_file_location("_user_scorers", path)
+    if spec is None or spec.loader is None:
+        raise ValueError(f"Cannot load scorer file: {path!r}")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    scorers = getattr(mod, "SCORERS", None)
+    if scorers is None:
+        raise ValueError(f"scorer file {path!r} must define a top-level SCORERS list")
+    return list(scorers)
+
+
+_COL_WIDTH = 42
+
+
+def _format_scorer_value(name: str, value: Any) -> str:
+    if isinstance(value, dict):
+        pass_val = value.get("pass")
+        score_val = value.get("score")
+        reasoning = value.get("reasoning", "")
+        if score_val is not None:
+            icon = "✅" if pass_val else ("❌" if pass_val is False else "—")
+            snippet = str(reasoning)[:30] if reasoning else ""
+            return f"{name}: {score_val:.2f} {icon} {snippet}".rstrip()
+        if pass_val is True:
+            return f"{name}: ✅ PASS"
+        if pass_val is False:
+            return f"{name}: ❌ FAIL"
+        if pass_val is None:
+            return f"{name}: — N/A"
+    return f"{name}: {value}"
+
+
+def render_per_case_comparison(
+    variant_names: list[str],
+    per_case_by_variant: dict[str, list[dict[str, Any]]],
+    cases: list[dict[str, Any]],
+) -> str:
+    lines: list[str] = []
+    n_cases = len(cases)
+    for idx in range(n_cases):
+        prompt = cases[idx].get("prompt", "")
+        prompt_snippet = prompt[:60] + ("..." if len(prompt) > 60 else "")
+        lines.append(f"\n=== Case {idx + 1}/{n_cases}: {prompt_snippet!r} ===\n")
+
+        # Build per-variant output and scorer rows
+        col_data: list[dict[str, Any]] = []
+        for vname in variant_names:
+            vcases = per_case_by_variant.get(vname, [])
+            if idx < len(vcases):
+                col_data.append(vcases[idx])
+            else:
+                col_data.append({"output": "", "scorer_results": {}})
+
+        # Header row
+        headers = []
+        for i, vname in enumerate(variant_names):
+            label = "BASELINE" if i == 0 else f"VARIANT: {vname}"
+            headers.append(label.ljust(_COL_WIDTH))
+        lines.append("   ".join(headers))
+        lines.append(("─" * _COL_WIDTH + "   ") * len(variant_names))
+
+        # Output text rows
+        output_lines: list[list[str]] = []
+        for entry in col_data:
+            text = entry.get("output", "")
+            char_count = len(text)
+            wrapped = textwrap.wrap(text, _COL_WIDTH - 2) or [""]
+            wrapped[-1] = wrapped[-1] + f" ({char_count} chars)"
+            output_lines.append(wrapped)
+
+        max_rows = max((len(ols) for ols in output_lines), default=0)
+        for row_i in range(max_rows):
+            row_cells = []
+            for ols in output_lines:
+                cell = ols[row_i] if row_i < len(ols) else ""
+                row_cells.append(cell.ljust(_COL_WIDTH))
+            lines.append("   ".join(row_cells))
+
+        lines.append("")
+
+        # Scorer rows
+        all_scorer_keys: list[str] = []
+        seen: set[str] = set()
+        for entry in col_data:
+            for k in entry.get("scorer_results", {}):
+                if k not in seen:
+                    all_scorer_keys.append(k)
+                    seen.add(k)
+
+        for skey in all_scorer_keys:
+            row_cells = []
+            for entry in col_data:
+                val = entry.get("scorer_results", {}).get(skey)
+                cell = "  " + _format_scorer_value(skey, val)
+                row_cells.append(cell.ljust(_COL_WIDTH))
+            lines.append("   ".join(row_cells))
+
+    return "\n".join(lines)
+
+
 def main(argv: list[str] | None = None) -> int:
     from agentkaizen.config import load_config, merge_cli_args
 
+    raw_argv = argv if argv is not None else sys.argv[1:]
     parser = _build_parser()
-    args = parser.parse_args(argv)
+    args = parser.parse_args(raw_argv)
+
+    # Validate --edit flags early
+    inline_edits: list[dict[str, str]] = []
+    for raw_edit in args.edit:
+        try:
+            inline_edits.append(_parse_edit_flag(raw_edit))
+        except argparse.ArgumentTypeError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
 
     config = load_config()
     config = merge_cli_args(config, args)
 
     tracing_enabled = HAS_WEAVE and bool(ensure_wandb_api_key())
+
+    # If --judge-rubric is given, force local eval path before resolving project
+    if args.judge_rubric and HAS_WEAVE_SCORERS and tracing_enabled:
+        print(
+            "info: --judge-rubric forces local eval path (Weave scorers disabled for this run).",
+            file=sys.stderr,
+        )
+        tracing_enabled = False
+
     if tracing_enabled:
         try:
             project_path = resolve_weave_project(config.entity, config.project)
@@ -884,16 +1125,76 @@ def main(argv: list[str] | None = None) -> int:
             )
 
     repo_root = Path.cwd()
-    try:
-        cases = load_cases_jsonl(Path(config.cases))
-    except CaseLoadError as exc:
-        print(str(exc), file=sys.stderr)
-        return 2
+
+    # Build cases: file-based and/or inline
+    inline_cases = _build_inline_cases(raw_argv)
+    explicit_cases_path = args.cases  # None when --cases was not passed
+    if explicit_cases_path is not None:
+        try:
+            file_cases = load_cases_jsonl(Path(explicit_cases_path))
+        except CaseLoadError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        cases = file_cases + inline_cases
+    elif inline_cases:
+        cases = inline_cases
+    else:
+        # Fall back to configured/default path
+        try:
+            cases = load_cases_jsonl(Path(config.cases))
+        except CaseLoadError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+
+    # Re-check judge need now that we have cases
+    needs_judge = bool(args.judge_rubric) or any("judge_rubric" in c for c in cases)
+    if needs_judge and HAS_WEAVE_SCORERS and tracing_enabled:
+        print(
+            "info: --judge-rubric forces local eval path (Weave scorers disabled for this run).",
+            file=sys.stderr,
+        )
+        tracing_enabled = False
 
     if tracing_enabled:
         weave_init(project_path)
-    variants = _variants_from_args(args.variant_file)
 
+    # Build variants: file-based (includes baseline) + optional inline
+    try:
+        variants = _variants_from_args(args.variant_file)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+    if inline_edits:
+        inline_variant: dict[str, Any] = {
+            "name": args.variant_name or "custom",
+            "edits": inline_edits,
+        }
+        # Insert inline variant right after baseline
+        variants.insert(1, inline_variant)
+
+    # Load custom scorers
+    extra_scorers: list[Any] = []
+    for scorer_path in args.allow_unsafe_scorer_file:
+        try:
+            extra_scorers.extend(_load_scorer_file(scorer_path))
+        except Exception as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+
+    # Inject LLM judge
+    if needs_judge:
+        extra_scorers.append(
+            LLMJudgeScorer(
+                rubric=args.judge_rubric or "",
+                runner_name=args.judge_runner,
+                model=args.judge_model,
+            )
+        )
+
+    scorers = [*build_eval_scorers(cases), *extra_scorers]
+
+    per_case_by_variant: dict[str, list[dict[str, Any]]] = {}
     variant_results: list[dict[str, Any]] = []
     for variant in variants:
         with tempfile.TemporaryDirectory(prefix="codex-eval-") as td:
@@ -929,16 +1230,19 @@ def main(argv: list[str] | None = None) -> int:
                 evaluation = weave.Evaluation(
                     name=f"codex-doc-impact-{variant['name']}",
                     dataset=cases,
-                    scorers=build_eval_scorers(cases),
+                    scorers=scorers,
                 )
                 result = asyncio.run(evaluation.evaluate(model))
+                # Weave path has no per_case_results
+                per_case_by_variant[variant["name"]] = []
             else:
                 evaluation = LocalEvaluation(
                     name=f"codex-doc-impact-{variant['name']}",
                     dataset=cases,
-                    scorers=build_eval_scorers(cases),
+                    scorers=scorers,
                 )
                 result = evaluation.evaluate(model)
+                per_case_by_variant[variant["name"]] = evaluation.per_case_results
             item = {"variant": variant["name"], "summary": result}
             variant_results.append(item)
             print(json.dumps(item, ensure_ascii=True))
@@ -950,6 +1254,18 @@ def main(argv: list[str] | None = None) -> int:
         token_regression_threshold=args.token_regression_threshold,
     )
     print(render_ranked_summary_table(ranked))
+
+    if args.show_outputs:
+        variant_names = [v["name"] for v in variants]
+        weave_path_used = HAS_WEAVE_SCORERS and tracing_enabled
+        if weave_path_used:
+            print(
+                "info: --show-outputs not available with Weave path; "
+                "unset WANDB_API_KEY to force local.",
+                file=sys.stderr,
+            )
+        else:
+            print(render_per_case_comparison(variant_names, per_case_by_variant, cases))
 
     failed_candidates = [
         item

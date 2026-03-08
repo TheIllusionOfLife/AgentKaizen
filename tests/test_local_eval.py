@@ -267,6 +267,61 @@ def test_all_deterministic_scorers():
     assert "model_latency" in result
 
 
+# --- per_case_results attribute ---
+
+
+def test_per_case_results_populated_after_evaluate():
+    cases = [
+        {
+            "prompt": "hello",
+            "must_contain": ["hello"],
+            "must_not_contain": [],
+            "max_chars": 100,
+        },
+        {
+            "prompt": "world",
+            "must_contain": ["world"],
+            "must_not_contain": [],
+            "max_chars": 100,
+        },
+    ]
+    model = EchoModel()
+    evaluation = LocalEvaluation(
+        name="test", dataset=cases, scorers=[score_contains_all]
+    )
+    evaluation.evaluate(model)
+
+    assert len(evaluation.per_case_results) == 2
+    for entry in evaluation.per_case_results:
+        assert "prompt" in entry
+        assert "output" in entry
+        assert "scorer_results" in entry
+        assert "latency" in entry
+    assert evaluation.per_case_results[0]["prompt"] == "hello"
+    assert evaluation.per_case_results[1]["prompt"] == "world"
+
+
+def test_per_case_results_reset_on_second_evaluate():
+    cases = [
+        {"prompt": "p1", "must_contain": [], "must_not_contain": [], "max_chars": 100}
+    ]
+    model = EchoModel()
+    evaluation = LocalEvaluation(
+        name="test", dataset=cases, scorers=[score_contains_all]
+    )
+
+    evaluation.evaluate(model)
+    first_results = evaluation.per_case_results.copy()
+
+    evaluation.evaluate(model)
+    second_results = evaluation.per_case_results
+
+    assert len(second_results) == 1
+    assert len(first_results) == 1
+    # They are independent lists
+    assert first_results is not second_results
+
+
 # --- Golden parity test ---
 
 

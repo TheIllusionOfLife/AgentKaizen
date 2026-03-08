@@ -75,27 +75,44 @@ class LocalEvaluation:
         self.name = name
         self.dataset = dataset
         self.scorers = scorers
+        self.per_case_results: list[dict[str, Any]] = []
 
     def evaluate(self, model: Any) -> dict[str, Any]:
         """Run evaluation synchronously and return aggregated summary."""
-        per_case_results: list[dict[str, Any]] = []
+        self.per_case_results = []
+        raw: list[dict[str, Any]] = []
 
-        for case in self.dataset:
+        for idx, case in enumerate(self.dataset):
             started = perf_counter()
             output = model.predict(case["prompt"])
             latency = perf_counter() - started
 
             case_result: dict[str, Any] = {"_latency": latency}
+            scorer_detail: dict[str, Any] = {}
 
             for scorer in self.scorers:
                 scorer_name = _scorer_name(scorer)
                 kwargs = _build_scorer_kwargs(scorer, case, output)
                 result = _call_scorer(scorer, **kwargs)
                 case_result[scorer_name] = result
+                scorer_detail[scorer_name] = result
 
-            per_case_results.append(case_result)
+            raw.append(case_result)
+            output_text = (
+                output.get("text", "") if isinstance(output, dict) else str(output)
+            )
+            self.per_case_results.append(
+                {
+                    "idx": idx,
+                    "case_id": case.get("id", str(idx)),
+                    "prompt": case["prompt"],
+                    "output": output_text,
+                    "scorer_results": scorer_detail,
+                    "latency": latency,
+                }
+            )
 
-        return _aggregate(per_case_results, self.scorers)
+        return _aggregate(raw, self.scorers)
 
 
 def _scorer_name(scorer: Any) -> str:
