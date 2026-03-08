@@ -968,7 +968,12 @@ def _build_inline_cases(argv: list[str]) -> list[dict[str, Any]]:
             current["must_not_contain"].append(argv[i])
         elif arg == "--max-chars" and i + 1 < len(argv) and current is not None:
             i += 1
-            current["max_chars"] = int(argv[i])
+            try:
+                current["max_chars"] = int(argv[i])
+            except ValueError:
+                raise argparse.ArgumentTypeError(
+                    f"--max-chars requires an integer (got {argv[i]!r})"
+                )
         i += 1
     if current is not None:
         cases.append(current)

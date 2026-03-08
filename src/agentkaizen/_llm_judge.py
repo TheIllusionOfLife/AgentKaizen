@@ -26,9 +26,15 @@ def _extract_json(text: str) -> str:
 def _build_judge_prompt(prompt: str, response: str, rubric: str) -> str:
     return (
         "You are an objective evaluator. Respond with JSON only — no markdown fences.\n\n"
-        f"Prompt given to the agent:\n{prompt}\n\n"
-        f"Agent response:\n{response}\n\n"
-        f"Rubric:\n{rubric}\n\n"
+        "<prompt>\n"
+        f"{prompt}\n"
+        "</prompt>\n\n"
+        "<response>\n"
+        f"{response}\n"
+        "</response>\n\n"
+        "<rubric>\n"
+        f"{rubric}\n"
+        "</rubric>\n\n"
         'Return: {"pass": true|false, "score": 0.0-1.0, "reasoning": "one sentence"}'
     )
 
@@ -68,16 +74,20 @@ class LLMJudgeScorer(LocalScorer):
             parsed = json.loads(_extract_json(result.final_message))
             if not isinstance(parsed, dict):
                 raise ValueError(f"judge returned non-dict: {type(parsed)}")
+            score_raw = parsed.get("score")
+            try:
+                score: float | None = (
+                    max(0.0, min(1.0, float(score_raw)))
+                    if score_raw is not None
+                    else None
+                )
+            except (TypeError, ValueError):
+                score = None
             raw_pass = parsed.get("pass")
             if isinstance(raw_pass, bool):
                 passed = raw_pass
             else:
-                passed = (parsed.get("score", 0) or 0) >= 0.5
-            score_raw = parsed.get("score")
-            if score_raw is not None:
-                score: float | None = max(0.0, min(1.0, float(score_raw)))
-            else:
-                score = None
+                passed = (score or 0.0) >= 0.5
             return {
                 "pass": passed,
                 "score": score,
