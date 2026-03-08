@@ -3,7 +3,7 @@
 ## Purpose
 AgentKaizen helps teams improve CLI-based AI coding agents with measurable experiments instead of trial-and-error edits.
 
-The core problem is steerability. Users can influence agents through many surfaces, such as `AGENTS.md`, repository docs, skills, and tool configuration, but they often lack a reliable way to measure which changes actually improve behavior. AgentKaizen connects those steering inputs to W&B Weave traces and evaluations.
+The core problem is steerability. Users can influence agents through many surfaces, such as `AGENTS.md`, repository docs, skills, and tool configuration, but they often lack a reliable way to measure which changes actually improve behavior. AgentKaizen traces and evaluates locally by default, with optional W&B Weave integration for remote dashboards and trace inspection.
 
 ## Target Users
 - Advanced users of Codex or similar CLI-based coding agents
@@ -36,7 +36,7 @@ Users come here to:
 - Replacing Codex itself
 - Building a general-purpose agent framework
 - Managing every possible LLM integration
-- Providing a hosted UI beyond what W&B Weave already offers
+- Providing a hosted UI (W&B Weave dashboard is optional, not required)
 
 ## Product Principles
 - Measure changes, do not guess

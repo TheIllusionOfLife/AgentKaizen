@@ -1,6 +1,6 @@
-# User Workflow: Improving Codex Behavior with Weave
+# User Workflow: Improving Codex Behavior
 
-This is a project-owned workflow guide for running the AgentKaizen loop. Before using the commands below, set `WANDB_API_KEY`, `WANDB_ENTITY`, and `WANDB_PROJECT` in `.env.local` or your shell, as described in the repository [README.md](../../README.md). In practice, keeping all three in `.env.local` is the least fragile setup for live Weave workflows.
+This is a project-owned workflow guide for running the AgentKaizen loop. All workflows work locally without W&B. For W&B Weave integration (remote tracing and dashboards), set `WANDB_API_KEY`, `WANDB_ENTITY`, and `WANDB_PROJECT` in `.env.local` or your shell, as described in the repository [README.md](../../README.md).
 
 ## Goal
 Use measurable experiments to improve Codex outputs by iterating on foundational documents and config surfaces (for example `AGENTS.md`, `README.md`, skills, and Codex profile/config choices).
@@ -71,7 +71,7 @@ uv run agentkaizen eval \
   --latency-regression-threshold 0.20 \
   --token-regression-threshold 0.20
 ```
-- Compare baseline vs variants in Weave Evals.
+- Compare baseline vs variants (locally or in Weave Evals when W&B is configured).
 - Gate candidates when quality is similar but latency/tokens regress.
 - `agentkaizen eval` runs variants in temp workspaces and automatically adds `--skip-git-repo-check` unless you already passed it.
 

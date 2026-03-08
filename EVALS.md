@@ -43,8 +43,8 @@ Current scorers:
 - file path citation presence
 - token usage extraction
 
-Built-in Weave scorers depend on optional case fields:
-- `response_schema` enables built-in JSON/schema validation
+Built-in JSON/schema scorers depend on optional case fields:
+- `response_schema` enables built-in JSON/schema validation (uses Weave scorers when available, local equivalents otherwise)
 - datasets that do not include those fields should still run with the deterministic scorers only
 
 These scorers are useful for:
@@ -62,7 +62,7 @@ They are not sufficient for:
 So the current scorer layer should be treated as production-usable guardrails, not complete answer-quality evaluation.
 
 ### Models
-Offline evals use `CodexVariantModel(weave.Model)` in `codex_evals.py`.
+Offline evals use `CodexVariantModel` (backed by `weave.Model` when Weave is installed, or `LocalModel` otherwise) in `codex_evals.py`.
 
 This model represents an execution wrapper around a prepared candidate application configuration, not a provider SDK model wrapper. In practice, variant preparation means:
 - a temporary copy of the repo
@@ -195,14 +195,14 @@ The current scorers are mostly structural and syntactic. They do not fully captu
 This project preserves multimodal content blocks for one-shot prompts and interactive session messages. Scoring remains mostly text-first, but multimodal traces are now available for future eval expansion.
 
 ### Redaction strategy
-The project uses hybrid redaction: custom pre-upload sanitization plus Weave's built-in PII redaction. The custom layer is still needed for:
+The project uses hybrid redaction: custom pre-upload sanitization plus PII detection (Weave's ML-based redaction when installed, or local regex-based detection otherwise). The custom layer is still needed for:
 - tokens and auth headers
 - local filesystem paths
 - usernames in paths
 - session-specific metadata
 - instruction boilerplate suppression
 
-Built-in Weave PII redaction is active in the current runtime, and it complements rather than replaces the current logic.
+When Weave is installed, its built-in ML-based PII redaction complements the local regex and project-specific sanitization. When running locally without Weave, regex-based PII detection covers common patterns (emails, phones, SSNs, credit cards, API keys, bearer tokens) but may miss context-sensitive secrets.
 
 ## Recommended Next Steps
 To improve evaluation quality over time:

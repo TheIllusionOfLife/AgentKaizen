@@ -1,6 +1,6 @@
 # AgentKaizen
 
-Measure and improve how CLI-based AI coding agents behave, using W&B Weave.
+Measure and improve how CLI-based AI coding agents behave. Works locally out of the box; optionally integrates with W&B Weave for remote tracing and dashboards.
 
 ## Why This Project Exists
 Users of tools like Codex can steer agent behavior through many different surfaces:
@@ -11,7 +11,7 @@ Users of tools like Codex can steer agent behavior through many different surfac
 - Codex config and profiles
 - other repo-specific documents
 
-Those surfaces matter, but it is usually hard to tell which change actually helped. This project exists to connect those steering inputs to measurable outcomes with W&B Weave.
+Those surfaces matter, but it is usually hard to tell which change actually helped. This project exists to connect those steering inputs to measurable outcomes — locally by default, with optional W&B Weave integration for remote tracing and dashboards.
 
 In practice, AgentKaizen helps you:
 - trace Codex CLI runs
@@ -38,18 +38,22 @@ If you are new to Weave, start here:
 - Python 3.12+
 - `uv`
 - Codex CLI (`codex`) or Claude Code CLI (`claude`)
-- A W&B account and API key
 
-### Environment Variables
-Set the required W&B variables in your shell profile or in `.env.local`. For live Weave workflows, set all three explicitly so evals and session scoring do not depend on implicit account inference:
-
+### Install
 ```bash
-WANDB_API_KEY=your_key_here
-WANDB_ENTITY=your-team-or-username
-WANDB_PROJECT=your-weave-project
+uv sync --group dev              # basic install (local-only, no W&B)
+uv sync --group dev              # dev group includes weave when available
 ```
 
-For a shell session, you can export them like this:
+To install with W&B Weave support:
+```bash
+pip install agentkaizen[weave]   # or include in your dependency spec
+```
+
+All workflows work without W&B. When Weave is not installed or `WANDB_API_KEY` is not set, AgentKaizen runs in local-only mode: traces are saved to `~/.agentkaizen/traces.jsonl`, evaluations run locally, and PII redaction uses built-in regex patterns.
+
+### Environment Variables (Optional — W&B Weave)
+For remote tracing and dashboards, set the W&B variables in your shell profile or in `.env.local`:
 
 ```bash
 export WANDB_API_KEY=your_key_here
@@ -57,7 +61,7 @@ export WANDB_ENTITY=your-team-or-username
 export WANDB_PROJECT=your-weave-project
 ```
 
-All commands in this repo require a W&B project. The entity can come from `--entity`, `WANDB_ENTITY`, `.env.local`, or your logged-in W&B account, but the most reliable setup is to keep both `WANDB_ENTITY` and `WANDB_PROJECT` in `.env.local`. If you do not want to set environment variables, pass `--entity` and `--project` explicitly on each command.
+When all three are set and `weave` is installed, commands automatically trace to both the local log and W&B. The entity can come from `--entity`, `WANDB_ENTITY`, `.env.local`, or your logged-in W&B account, but the most reliable setup is to keep both `WANDB_ENTITY` and `WANDB_PROJECT` in `.env.local`.
 
 AgentKaizen-specific environment variables (override `[tool.agentkaizen]` defaults when pyproject.toml is absent):
 - `AGENTKAIZEN_AGENT`: agent runner to use (`codex` or `claude-code`)
@@ -74,11 +78,6 @@ Useful optional Weave environment variables:
 - `WEAVE_PRINT_CALL_LINK=false`: suppress noisy call-link output in scripted or CI environments
 - `WEAVE_LOG_LEVEL`: increase logging when debugging Weave integration issues
 - `WEAVE_DISABLED=true`: disable Weave tracing entirely for local dry runs or troubleshooting
-
-### Install
-```bash
-uv sync --group dev
-```
 
 ### Repo defaults (`[tool.agentkaizen]`)
 AgentKaizen reads project-level defaults from `pyproject.toml` before any command runs. This is the primary steering surface for choosing the agent and tuning eval behavior — you set it once per project rather than repeating flags on every command.
@@ -200,27 +199,28 @@ Practical rule of thumb:
 
 Do not stop at the ranking summary:
 
-- open the matching Weave eval calls and inspect the traced per-case outputs for baseline and variant
+- if using W&B Weave, open the matching eval calls and inspect the traced per-case outputs for baseline and variant
 - verify that the changed outputs look better for the reason you intended, not just because they happened to satisfy a literal scorer
 - if a case still fails, check whether the problem is the model behavior or the case design
 
 ### Legacy entry points (soft-deprecated)
 The old `codex-weave`, `codex-eval`, `codex-casegen`, `codex-weave-sync-interactive`, and `codex-score-interactive` entry points still work and delegate to the same implementations. Prefer the `agentkaizen` subcommands for new workflows.
 
-## How AgentKaizen Uses Weave
-The important mapping is:
+## How AgentKaizen Works
+AgentKaizen provides a complete local evaluation and tracing pipeline:
 
-1. `weave.init(...)`
-Connects the current CLI command to a W&B project.
+1. **Local tracing** — All agent runs and session ingestions are logged to `~/.agentkaizen/traces.jsonl` as structured JSONL entries.
 
-2. `@weave.op()`
-Wraps important operations so their inputs, outputs, and metadata become traces.
+2. **Local evaluation** — `LocalEvaluation` runs the same case set against multiple candidate variants and summarizes scorer results, matching the exact schema used by W&B Weave evaluations.
 
-3. `weave.Evaluation(...)`
-Runs the same case set against multiple candidate variants and summarizes scorer results.
+3. **Shared scorers** — Translate desired agent behavior into measurable checks such as required text, forbidden text, output length, JSON validity, file path citations, and token usage.
 
-4. Shared scorers
-Translate desired agent behavior into measurable checks such as required text, forbidden text, output length, JSON validity, file path citations, and token usage.
+4. **Local PII redaction** — Regex-based detection of emails, phone numbers, SSNs, credit cards, API keys, and bearer tokens. Best-effort but covers common patterns.
+
+When W&B Weave is installed and configured, AgentKaizen additionally:
+- Traces to W&B via `weave.init()` and `@weave.op()`
+- Uses `weave.Evaluation()` for remote eval tracking with dashboard support
+- Uses Weave's ML-based PII redaction (complementing the local regex layer)
 
 This is what makes the repo useful: it turns prompt and documentation tuning into an evaluation loop instead of guesswork.
 
@@ -263,13 +263,13 @@ Built-in scorers are enabled only when the eval dataset contains the fields they
 - `response_schema` activates built-in JSON/schema validation
 - datasets without those optional fields still run with the deterministic scorers
 
-Models in this repo are application-level Weave models, not provider SDK wrappers. `agentkaizen eval` uses `CodexVariantModel(weave.Model)` to represent a candidate agent behavior running inside a temporary workspace with specific config and document variants.
+Models in this repo are application-level model wrappers, not provider SDK wrappers. `agentkaizen eval` uses `CodexVariantModel` (backed by `weave.Model` when Weave is installed, or `LocalModel` otherwise) to represent a candidate agent behavior running inside a temporary workspace with specific config and document variants.
 
 #### 3. Image prompts
 This project now preserves multimodal prompt structure for one-shot `codex exec` runs and interactive session ingestion. Flattened text fields are still retained for backwards compatibility, but traces also keep ordered content blocks and a `modalities` summary.
 
-#### 4. App versioning with `weave.Model`
-This project uses `weave.Model` in offline evals to represent candidate app behavior. Each variant is effectively a versioned Codex application setup:
+#### 4. App versioning
+This project uses model classes (`weave.Model` when available, `LocalModel` otherwise) in offline evals to represent candidate app behavior. Each variant is effectively a versioned Codex application setup:
 - temporary workspace contents
 - Codex model and profile settings
 - candidate document or config edits
@@ -277,23 +277,23 @@ This project uses `weave.Model` in offline evals to represent candidate app beha
 This is a lightweight use of app versioning focused on comparison during evals, not a full model-registry workflow.
 
 #### 5. PII redaction
-This repo uses hybrid redaction for traced content: custom sanitization for repo-specific secrets and path cleanup, plus Weave's built-in PII redaction support. The project-specific layer still handles:
+This repo uses hybrid redaction for traced content: custom sanitization for repo-specific secrets and path cleanup, plus optional Weave PII redaction when installed. When Weave is not available, local regex-based PII detection covers common patterns (emails, phones, SSNs, credit cards, API keys, bearer tokens). The project-specific layer still handles:
 - API keys and bearer tokens
 - filesystem paths and usernames
 - session-specific metadata cleanup
 - suppression of large instruction boilerplate when deriving the user task
 
-Weave's built-in redaction is enabled for one-shot and interactive trace uploads, but it complements rather than replaces the project-specific sanitization above.
+When Weave is installed, its built-in ML-based redaction is enabled for one-shot and interactive trace uploads, complementing the local regex and project-specific sanitization.
 
 ## Troubleshooting
 - If a command says `WANDB_PROJECT` is missing, add both `WANDB_PROJECT` and `WANDB_ENTITY` to `.env.local` or pass `--entity`/`--project` explicitly.
-- If a command says `WANDB_API_KEY` is missing or invalid, refresh the key in `.env.local` or your shell session.
+- If a command says `WANDB_API_KEY` is missing, you can either set the key for W&B integration or run in local-only mode (no action needed).
 - If an eval is meant to validate structured JSON output, make sure the relevant case rows include `response_schema`.
 
 ## Architecture
 The core flow is:
 
-1. Run or ingest Codex activity into Weave traces.
+1. Run or ingest Codex activity into local traces (and optionally W&B Weave).
 2. Score those traces with guardrails or interactive-session heuristics.
 3. Generate reusable cases from real traces.
 4. Compare candidate steering changes, such as `AGENTS.md` edits, against the baseline.
@@ -308,6 +308,10 @@ Key modules (all under `src/agentkaizen/`):
 - [`casegen.py`](./src/agentkaizen/casegen.py) — draft case generation from traces
 - [`scoring.py`](./src/agentkaizen/scoring.py) — shared scorer functions
 - [`core.py`](./src/agentkaizen/core.py) — shared infra: JSONL parser, PII redaction, W&B env
+- [`_weave_compat.py`](./src/agentkaizen/_weave_compat.py) — `HAS_WEAVE` flag, `weave_init()`, `weave_op()` shims
+- [`_local_eval.py`](./src/agentkaizen/_local_eval.py) — local evaluation framework (`LocalEvaluation`, `LocalModel`, `LocalScorer`)
+- [`_trace_log.py`](./src/agentkaizen/_trace_log.py) — local JSONL trace persistence and querying
+- [`_pii.py`](./src/agentkaizen/_pii.py) — local regex-based PII redaction
 - [`runners/`](./src/agentkaizen/runners/) — `AgentRunner` protocol + `CodexRunner`, `ClaudeCodeRunner`
 
 ## Repository Docs
