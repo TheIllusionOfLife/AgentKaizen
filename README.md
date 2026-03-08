@@ -45,9 +45,9 @@ uv sync --group dev-minimal      # minimal install (local-only, no W&B)
 uv sync --group dev              # full dev install (includes weave)
 ```
 
-To install with W&B Weave support:
+To install the package with W&B Weave support (package consumers, not repo checkout):
 ```bash
-pip install agentkaizen[weave]   # or include in your dependency spec
+pip install agentkaizen[weave]   # or: uv add agentkaizen[weave]
 ```
 
 All workflows work without W&B. When Weave is not installed or `WANDB_API_KEY` is not set, AgentKaizen runs in local-only mode: traces are saved to `~/.agentkaizen/traces.jsonl`, evaluations run locally, and PII redaction uses built-in regex patterns.

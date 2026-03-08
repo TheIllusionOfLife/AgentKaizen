@@ -27,9 +27,12 @@ if HAS_WEAVE:
 
     try:
         from weave.scorers import PydanticScorer, ValidJSONScorer
+
+        HAS_WEAVE_SCORERS = True
     except ImportError:
-        # weave installed without [scorers] extras — fall back to local scorers
-        HAS_WEAVE = False
+        HAS_WEAVE_SCORERS = False  # weave installed without [scorers] extras
+else:
+    HAS_WEAVE_SCORERS = False
 
 from agentkaizen.runners import get_runner
 from agentkaizen.runners.base import AgentRunError
@@ -230,7 +233,7 @@ def copy_workspace(src_root: Path, dst_root: Path) -> None:
     )
 
 
-if HAS_WEAVE:
+if HAS_WEAVE_SCORERS:
     contains_all_scorer = weave.op()(score_contains_all)
     forbidden_absent_scorer = weave.op()(score_forbidden_absent)
     exact_match_scorer = weave.op()(score_exact_match)
@@ -324,7 +327,7 @@ def _pydantic_model_from_json_schema(
     return model
 
 
-if HAS_WEAVE:
+if HAS_WEAVE_SCORERS:
 
     class BuiltinValidJSONCaseScorer(weave.Scorer):
         name: str = "builtin_json_validity"
@@ -922,7 +925,7 @@ def main(argv: list[str] | None = None) -> int:
                 codex_args=resolved_config["codex_args"],
                 timeout_seconds=config.timeout_seconds,
             )
-            if HAS_WEAVE and tracing_enabled:
+            if HAS_WEAVE_SCORERS and tracing_enabled:
                 evaluation = weave.Evaluation(
                     name=f"codex-doc-impact-{variant['name']}",
                     dataset=cases,
