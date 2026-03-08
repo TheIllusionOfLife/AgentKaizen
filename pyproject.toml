@@ -1,14 +1,14 @@
 [project]
 name = "agentkaizen"
 version = "0.1.0"
-description = "Portable CLI evaluation tool for AI coding agents — trace, score, and compare agent behavior with W&B Weave"
+description = "Portable CLI evaluation tool for AI coding agents — trace, score, and compare agent behavior locally or with W&B Weave"
 readme = "README.md"
 license = { text = "MIT" }
 authors = [{ name = "AgentKaizen Contributors" }]
 requires-python = ">=3.12"
 dependencies = [
   "python-dotenv>=1.0",
-  "weave[scorers]>=0.52.30",
+  "pydantic>=2.0",
 ]
 classifiers = [
   "Development Status :: 3 - Alpha",
@@ -19,6 +19,9 @@ classifiers = [
   "Topic :: Software Development :: Testing",
   "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
+
+[project.optional-dependencies]
+weave = ["weave[scorers]>=0.52.30"]
 
 [project.urls]
 "Homepage" = "https://github.com/TheIllusionOfLife/AgentKaizen"
@@ -44,6 +47,12 @@ where = ["src"]
 
 [dependency-groups]
 dev = [
+  "agentkaizen[weave]",
+  "pytest>=8.3.0",
+  "python-pptx>=1.0.0",
+  "ruff>=0.11.0",
+]
+dev-minimal = [
   "pytest>=8.3.0",
   "python-pptx>=1.0.0",
   "ruff>=0.11.0",
