@@ -11,11 +11,13 @@ Important steering surfaces in this repo include:
 - Codex CLI configuration and profiles
 
 ## Required Environment
-Live Weave workflows require all of the following:
+All workflows work without W&B. When Weave is not installed or unconfigured, AgentKaizen runs in local-only mode (traces to `~/.agentkaizen/traces.jsonl`, local evaluation, regex-based PII redaction).
+
+For W&B Weave integration (remote tracing and dashboards), set:
 - `WANDB_API_KEY`
 - `WANDB_PROJECT`
 
-`WANDB_ENTITY` is also required, but it may come from `WANDB_ENTITY`, `.env.local`, or the logged-in W&B account if not passed explicitly.
+`WANDB_ENTITY` is also needed for Weave, but it may come from `WANDB_ENTITY`, `.env.local`, or the logged-in W&B account if not passed explicitly.
 
 Do not hardcode personal W&B entity or project values in code, docs, examples, or tests.
 

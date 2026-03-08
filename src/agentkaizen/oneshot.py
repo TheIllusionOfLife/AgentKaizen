@@ -7,8 +7,8 @@ import json
 import subprocess  # noqa: F401  (re-exported for test patchability)
 import sys
 
-import weave
-
+from agentkaizen._trace_log import append_trace
+from agentkaizen._weave_compat import HAS_WEAVE, weave_init, weave_op
 from agentkaizen.runners import get_runner
 from agentkaizen.runners.base import AgentRunError
 from agentkaizen.core import (
@@ -132,21 +132,33 @@ def main(argv: list[str] | None = None) -> int:
     config = load_config()
     config = merge_cli_args(config, args)
 
-    if not ensure_wandb_api_key():
-        print("WANDB_API_KEY is required to send traces to W&B.", file=sys.stderr)
-        return 2
-    try:
-        project_path = resolve_weave_project(config.entity, config.project)
-    except ValueError as exc:
-        print(str(exc), file=sys.stderr)
-        return 2
+    tracing_enabled = HAS_WEAVE and bool(ensure_wandb_api_key())
+    if tracing_enabled:
+        try:
+            project_path = resolve_weave_project(config.entity, config.project)
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+    else:
+        project_path = None
+        if not HAS_WEAVE:
+            print(
+                "info: weave not installed — running in local-only mode.",
+                file=sys.stderr,
+            )
+        elif not ensure_wandb_api_key():
+            print(
+                "info: WANDB_API_KEY not set — running in local-only mode.",
+                file=sys.stderr,
+            )
 
     prompt = sys.stdin.read() if args.prompt == "-" else args.prompt
     input_content = build_prompt_content(prompt, image_paths=args.image)
     modalities = summarize_modalities(input_content)
 
     configure_weave_pii_redaction()
-    weave.init(project_path)
+    if tracing_enabled:
+        weave_init(project_path)
 
     runner = get_runner(
         config.agent,
@@ -157,7 +169,7 @@ def main(argv: list[str] | None = None) -> int:
         extra_args=args.codex_arg,
     )
 
-    @weave.op(name="run_codex_exec_traced")  # freeze op name across refactor
+    @weave_op(name="run_codex_exec_traced")  # freeze op name across refactor
     def run_codex_exec_traced() -> dict:
         command = runner.build_command(prompt)
         try:
@@ -210,6 +222,10 @@ def main(argv: list[str] | None = None) -> int:
         }
 
     result = apply_builtin_pii_redaction(run_codex_exec_traced())
+    try:
+        append_trace(result, op_name="run_codex_exec_traced")
+    except OSError as exc:
+        print(f"warning: failed to write local trace: {exc}", file=sys.stderr)
     if result["final_message"]:
         print(result["final_message"])
     if result["stderr"]:

@@ -10,8 +10,15 @@ from dataclasses import dataclass
 from typing import Any, Iterable
 
 from dotenv import dotenv_values
-from weave.trace.settings import UserSettings
-from weave.utils.pii_redaction import redact_pii
+
+from agentkaizen._weave_compat import HAS_WEAVE
+
+if HAS_WEAVE:
+    from weave.trace.settings import UserSettings
+    from weave.utils.pii_redaction import redact_pii as _weave_redact_pii
+else:
+    from agentkaizen._pii import configure_pii_redaction as _local_configure_pii
+    from agentkaizen._pii import redact_pii_local as _local_redact_pii
 
 
 @dataclass
@@ -101,11 +108,17 @@ def sanitize_command(command: list[str]) -> list[str]:
 
 
 def configure_weave_pii_redaction(enabled: bool = True) -> None:
-    settings = UserSettings(
-        redact_pii=enabled,
-        redact_pii_fields=DEFAULT_PII_REDACTION_FIELDS if enabled else [],
-    )
-    settings.apply()
+    if HAS_WEAVE:
+        settings = UserSettings(
+            redact_pii=enabled,
+            redact_pii_fields=DEFAULT_PII_REDACTION_FIELDS if enabled else [],
+        )
+        settings.apply()
+    else:
+        _local_configure_pii(
+            enabled=enabled,
+            fields=DEFAULT_PII_REDACTION_FIELDS if enabled else [],
+        )
 
 
 def apply_builtin_pii_redaction(
@@ -114,7 +127,9 @@ def apply_builtin_pii_redaction(
     if not enabled:
         return value
     try:
-        return redact_pii(value)
+        if HAS_WEAVE:
+            return _weave_redact_pii(value)
+        return _local_redact_pii(value)
     except Exception:
         return value
 

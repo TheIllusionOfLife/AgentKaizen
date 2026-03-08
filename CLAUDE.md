@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Project Does
 
-AgentKaizen measures and improves CLI-based AI coding agent behavior using W&B Weave. It connects steering inputs (AGENTS.md, README.md, skills, Codex config) to measurable outcomes through tracing, scoring, and offline evaluation. Supports both Codex and Claude Code agents.
+AgentKaizen measures and improves CLI-based AI coding agent behavior. It connects steering inputs (AGENTS.md, README.md, skills, Codex config) to measurable outcomes through tracing, scoring, and offline evaluation. Works locally out of the box; optionally integrates with W&B Weave for remote tracing and dashboards. Supports both Codex and Claude Code agents.
 
 ## Commands
 
@@ -53,12 +53,16 @@ CI runs `pytest`, `ruff check .`, and `ruff format --check .` via `uv run --grou
 | `core.py` | Shared infra: JSONL parser, PII redaction, W&B env resolution, prompt building |
 | `oneshot.py` | One-shot traced agent run CLI (`agentkaizen run`) |
 | `evals.py` | Offline variant comparison: workspaces, `CodexVariantModel`, scoring/ranking |
-| `casegen.py` | Generate draft eval cases from recent Weave traces |
-| `session_sync.py` | Ingest local Codex sessions into Weave traces |
+| `casegen.py` | Generate draft eval cases from recent traces (local or Weave) |
+| `session_sync.py` | Ingest local Codex sessions into traces |
 | `session_scoring.py` | Score interactive session traces (heuristics + optional external judge) |
 | `scoring.py` | Deterministic scorer functions (substring, length, JSON, schema, sections) |
 | `cli.py` | Unified `agentkaizen` entry point with subcommand dispatch |
 | `config.py` | Load `[tool.agentkaizen]` from pyproject.toml; merge with CLI args |
+| `_weave_compat.py` | `HAS_WEAVE` flag, `weave_init()`, `weave_op()` shims for optional Weave |
+| `_local_eval.py` | Local evaluation framework: `LocalEvaluation`, `LocalModel`, `LocalScorer` |
+| `_trace_log.py` | Local JSONL trace persistence and querying (`~/.agentkaizen/traces.jsonl`) |
+| `_pii.py` | Local regex-based PII redaction (fallback when Weave is absent) |
 | `runners/` | `AgentRunner` protocol + `CodexRunner`, `ClaudeCodeRunner`, registry |
 
 ### Data flow
@@ -66,7 +70,7 @@ CI runs `pytest`, `ruff check .`, and `ruff format --check .` via `uv run --grou
 ```text
 codex exec / interactive sessions / claude -p
         |
-   agentkaizen run / agentkaizen session sync   (trace into Weave)
+   agentkaizen run / agentkaizen session sync   (trace locally + optionally to Weave)
         |
    agentkaizen session score                    (score real sessions)
    agentkaizen eval casegen                     (turn traces into eval cases)
@@ -90,9 +94,10 @@ codex exec / interactive sessions / claude -p
 
 - Interactive sync seeds state on first run and uploads nothing initially (prevents backfilling entire history).
 - `codex-eval` / `agentkaizen eval` auto-adds `--skip-git-repo-check` unless already supplied.
-- Optional eval case fields (`response_schema`) activate Weave built-in scorers; datasets without them must still work with deterministic scorers only.
+- Optional eval case fields (`response_schema`) activate built-in JSON/schema scorers; datasets without them must still work with deterministic scorers only.
 - `.env.local` is a supported source for `WANDB_API_KEY`, `WANDB_ENTITY`, `WANDB_PROJECT`, and `WANDB_BASE_URL`.
-- Redaction is hybrid: custom sanitization (tokens, paths, usernames) plus Weave built-in PII redaction.
+- W&B Weave is optional. When absent or unconfigured, all workflows run locally with `_local_eval.LocalEvaluation`, `_trace_log` for persistence, and `_pii` for regex-based PII redaction.
+- Redaction is hybrid: custom sanitization (tokens, paths, usernames) plus local regex PII detection (or Weave ML-based redaction when installed).
 - `ClaudeCodeRunner` uses `claude -p prompt --output-format json` and parses `{"type": "result", "result": "..."}`.
 - Token usage is not available from Claude Code's JSON output mode (future: `stream-json` mode).
 

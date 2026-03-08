@@ -7,8 +7,7 @@ import subprocess  # noqa: F401  (re-exported for test patchability)
 import sys
 from typing import Any
 
-import weave
-
+from agentkaizen._weave_compat import HAS_WEAVE, weave_init, weave_op
 from agentkaizen.runners import get_runner
 from agentkaizen.runners.base import AgentRunError
 from agentkaizen.core import ensure_wandb_api_key, resolve_weave_project
@@ -674,16 +673,25 @@ def main(argv: list[str] | None = None) -> int:
     config = load_config()
     config = merge_cli_args(config, args, aliases={"judge_model": "model"})
 
-    if not ensure_wandb_api_key():
-        print("WANDB_API_KEY is required to score interactive traces.", file=sys.stderr)
-        return 2
-    try:
-        project_path = resolve_weave_project(config.entity, config.project)
-    except ValueError as exc:
-        print(str(exc), file=sys.stderr)
-        return 2
-
-    weave.init(project_path)
+    tracing_enabled = HAS_WEAVE and bool(ensure_wandb_api_key())
+    if tracing_enabled:
+        try:
+            project_path = resolve_weave_project(config.entity, config.project)
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        weave_init(project_path)
+    else:
+        if not HAS_WEAVE:
+            print(
+                "info: weave not installed — running in local-only mode.",
+                file=sys.stderr,
+            )
+        elif not ensure_wandb_api_key():
+            print(
+                "info: WANDB_API_KEY not set — running in local-only mode.",
+                file=sys.stderr,
+            )
     if not args.trace_file:
         print("--trace-file is required.", file=sys.stderr)
         return 2
@@ -691,7 +699,7 @@ def main(argv: list[str] | None = None) -> int:
     with open(args.trace_file, encoding="utf-8") as trace_file:
         trace = json.load(trace_file)
 
-    @weave.op()
+    @weave_op()
     def score_interactive_trace(trace_payload: dict[str, Any]) -> dict[str, Any]:
         return score_interactive_trace_payload(
             trace_payload,

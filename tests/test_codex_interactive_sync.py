@@ -706,14 +706,8 @@ def test_run_sync_once_bootstraps_state_without_backfill(monkeypatch, tmp_path):
         encoding="utf-8",
     )
 
-    class FakeWeave:
-        def op(self):
-            def deco(fn):
-                return fn
-
-            return deco
-
-    monkeypatch.setattr(codex_interactive_sync, "weave", FakeWeave())
+    monkeypatch.setattr(codex_interactive_sync, "weave_op", lambda **kw: lambda fn: fn)
+    monkeypatch.setattr(codex_interactive_sync, "append_trace", lambda *a, **kw: None)
 
     summary = codex_interactive_sync._run_sync_once(
         session_root=tmp_path / "sessions",
@@ -730,15 +724,31 @@ def test_run_sync_once_bootstraps_state_without_backfill(monkeypatch, tmp_path):
     assert saved_state["last_processed_updated_at"] == "2026-03-06T05:00:00Z"
 
 
-def test_main_missing_wandb_api_key_writes_stderr(monkeypatch, capsys):
+def test_main_runs_locally_when_wandb_api_key_missing(monkeypatch, capsys, tmp_path):
     monkeypatch.setattr(codex_interactive_sync, "ensure_wandb_api_key", lambda: None)
+    monkeypatch.setattr(codex_interactive_sync, "HAS_WEAVE", False)
+    # Set up minimal state so --once doesn't fail
+    state_file = tmp_path / "state.json"
+    index_file = tmp_path / "session_index.jsonl"
+    index_file.write_text("", encoding="utf-8")
+    session_root = tmp_path / "sessions"
+    session_root.mkdir()
 
-    rc = codex_interactive_sync.main(["--once"])
+    rc = codex_interactive_sync.main(
+        [
+            "--once",
+            "--session-root",
+            str(session_root),
+            "--index-file",
+            str(index_file),
+            "--state-file",
+            str(state_file),
+        ]
+    )
 
     out = capsys.readouterr()
-    assert rc == 2
-    assert "WANDB_API_KEY" in out.err
-    assert out.out == ""
+    assert rc == 0
+    assert "local-only mode" in out.err
 
 
 def test_recover_orphaned_sessions_returns_completed_session_not_in_index(tmp_path):
@@ -1084,18 +1094,18 @@ def test_run_sync_once_uploads_multimodal_trace_payload(monkeypatch, tmp_path):
 
     uploaded = []
 
-    class FakeWeave:
-        def op(self):
-            def deco(fn):
-                def wrapped(trace_payload):
-                    uploaded.append(trace_payload)
-                    return fn(trace_payload)
+    def capturing_op(**_kw):
+        def deco(fn):
+            def wrapped(trace_payload):
+                uploaded.append(trace_payload)
+                return fn(trace_payload)
 
-                return wrapped
+            return wrapped
 
-            return deco
+        return deco
 
-    monkeypatch.setattr(codex_interactive_sync, "weave", FakeWeave())
+    monkeypatch.setattr(codex_interactive_sync, "weave_op", capturing_op)
+    monkeypatch.setattr(codex_interactive_sync, "append_trace", lambda *a, **kw: None)
 
     summary = codex_interactive_sync._run_sync_once(
         session_root=session_root,

@@ -23,12 +23,23 @@ name = "agentkaizen"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "pydantic" },
     { name = "python-dotenv" },
+]
+
+[package.optional-dependencies]
+weave = [
     { name = "weave", extra = ["scorers"] },
 ]
 
 [package.dev-dependencies]
 dev = [
+    { name = "agentkaizen", extra = ["weave"] },
+    { name = "pytest" },
+    { name = "python-pptx" },
+    { name = "ruff" },
+]
+dev-minimal = [
     { name = "pytest" },
     { name = "python-pptx" },
     { name = "ruff" },
@@ -36,12 +47,20 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "pydantic", specifier = ">=2.0" },
     { name = "python-dotenv", specifier = ">=1.0" },
-    { name = "weave", extras = ["scorers"], specifier = ">=0.52.30" },
+    { name = "weave", extras = ["scorers"], marker = "extra == 'weave'", specifier = ">=0.52.30" },
 ]
+provides-extras = ["weave"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "agentkaizen", extras = ["weave"] },
+    { name = "pytest", specifier = ">=8.3.0" },
+    { name = "python-pptx", specifier = ">=1.0.0" },
+    { name = "ruff", specifier = ">=0.11.0" },
+]
+dev-minimal = [
     { name = "pytest", specifier = ">=8.3.0" },
     { name = "python-pptx", specifier = ">=1.0.0" },
     { name = "ruff", specifier = ">=0.11.0" },
