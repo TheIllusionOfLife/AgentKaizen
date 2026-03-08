@@ -340,7 +340,7 @@ if HAS_WEAVE:
         ) -> dict[str, Any]:
             del require_json
             if response_schema is None:
-                return {"pass": True, "applicable": False, "json_valid": None}
+                return {"pass": None, "applicable": False, "json_valid": None}
             result = ValidJSONScorer().score(output=_extract_output_text(output))
             json_valid = bool(result.get("json_valid"))
             return {"pass": json_valid, "applicable": True, "json_valid": json_valid}
@@ -357,7 +357,7 @@ if HAS_WEAVE:
             response_schema: dict[str, Any] | None = None,
         ) -> dict[str, Any]:
             if response_schema is None:
-                return {"pass": True, "applicable": False, "valid_pydantic": None}
+                return {"pass": None, "applicable": False, "valid_pydantic": None}
             model = _pydantic_model_from_json_schema(response_schema)
             result = PydanticScorer(model=model).score(
                 output=_extract_output_text(output)
@@ -384,7 +384,7 @@ else:
         ) -> dict[str, Any]:
             del require_json
             if response_schema is None:
-                return {"pass": True, "applicable": False, "json_valid": None}
+                return {"pass": None, "applicable": False, "json_valid": None}
             result = LocalValidJSONScorer().score(output=_extract_output_text(output))
             json_valid = bool(result.get("json_valid"))
             return {"pass": json_valid, "applicable": True, "json_valid": json_valid}
@@ -400,7 +400,7 @@ else:
             response_schema: dict[str, Any] | None = None,
         ) -> dict[str, Any]:
             if response_schema is None:
-                return {"pass": True, "applicable": False, "valid_pydantic": None}
+                return {"pass": None, "applicable": False, "valid_pydantic": None}
             pydantic_model = _pydantic_model_from_json_schema(response_schema)
             result = LocalPydanticScorer(model=pydantic_model).score(
                 output=_extract_output_text(output)

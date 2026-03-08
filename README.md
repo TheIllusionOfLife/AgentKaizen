@@ -41,8 +41,8 @@ If you are new to Weave, start here:
 
 ### Install
 ```bash
-uv sync --group dev              # basic install (local-only, no W&B)
-uv sync --group dev              # dev group includes weave when available
+uv sync --group dev-minimal      # minimal install (local-only, no W&B)
+uv sync --group dev              # full dev install (includes weave)
 ```
 
 To install with W&B Weave support:

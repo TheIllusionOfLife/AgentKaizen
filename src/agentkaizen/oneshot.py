@@ -222,7 +222,10 @@ def main(argv: list[str] | None = None) -> int:
         }
 
     result = apply_builtin_pii_redaction(run_codex_exec_traced())
-    append_trace(result, op_name="run_codex_exec_traced")
+    try:
+        append_trace(result, op_name="run_codex_exec_traced")
+    except OSError as exc:
+        print(f"warning: failed to write local trace: {exc}", file=sys.stderr)
     if result["final_message"]:
         print(result["final_message"])
     if result["stderr"]:

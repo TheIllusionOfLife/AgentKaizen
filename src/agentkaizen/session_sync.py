@@ -985,7 +985,10 @@ def _run_sync_once(
     def ingest_interactive_session_traced(
         trace_payload: dict[str, Any],
     ) -> dict[str, Any]:
-        append_trace(trace_payload, op_name="ingest_interactive_session_traced")
+        try:
+            append_trace(trace_payload, op_name="ingest_interactive_session_traced")
+        except OSError as exc:
+            print(f"warning: failed to write local trace: {exc}", file=sys.stderr)
         return trace_payload
 
     uploaded = 0

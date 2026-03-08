@@ -15,7 +15,7 @@ from typing import Any
 from pydantic import BaseModel
 
 
-class LocalModel:
+class LocalModel(BaseModel):
     """Base class replacing ``weave.Model``.  Subclasses implement ``predict()``."""
 
     def predict(self, prompt: str) -> dict[str, Any]:  # noqa: ARG002
