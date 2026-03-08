@@ -8,8 +8,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
-import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -31,8 +29,8 @@ def append_trace(
 
     Each entry: ``{"version": 1, "op_name": str, "started_at": ISO8601, "output": dict}``
     Creates parent directory if needed.
-    Uses atomic write (write to temp file, then rename) to prevent
-    corruption from concurrent processes.
+    Uses append mode (``"a"``) which is safe for concurrent single-line
+    writes at the OS level on POSIX systems.
     """
     target = log_path or DEFAULT_TRACE_LOG
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -45,23 +43,8 @@ def append_trace(
     }
     line = json.dumps(entry, ensure_ascii=True) + "\n"
 
-    fd, tmp_path = tempfile.mkstemp(
-        dir=str(target.parent), prefix=".trace_", suffix=".tmp"
-    )
-    try:
-        # Read existing content first
-        existing = ""
-        if target.exists():
-            existing = target.read_text(encoding="utf-8")
-
-        os.write(fd, (existing + line).encode("utf-8"))
-        os.close(fd)
-        os.replace(tmp_path, str(target))
-    except Exception:
-        os.close(fd) if not os.get_inheritable(fd) else None  # noqa: E501
-        if os.path.exists(tmp_path):
-            os.unlink(tmp_path)
-        raise
+    with open(target, "a", encoding="utf-8") as f:
+        f.write(line)
 
 
 def read_traces(

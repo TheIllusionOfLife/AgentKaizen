@@ -391,6 +391,13 @@ def main(argv: list[str] | None = None) -> int:
         source = "weave" if tracing_enabled else "local"
 
     if source == "weave":
+        if not HAS_WEAVE:
+            print(
+                "error: --source weave requires the weave package. "
+                "Install with: pip install agentkaizen[weave]",
+                file=sys.stderr,
+            )
+            return 2
         if not ensure_wandb_api_key():
             print("WANDB_API_KEY is required for weave source.", file=sys.stderr)
             return 2

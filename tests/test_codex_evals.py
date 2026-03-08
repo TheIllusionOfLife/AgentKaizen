@@ -4,6 +4,8 @@ import sys
 from pathlib import Path
 from time import perf_counter
 
+import pytest
+
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 import agentkaizen.evals as codex_evals
@@ -710,6 +712,7 @@ def test_quality_score_includes_exact_match_when_baseline_requires_it():
 
 
 def test_main_returns_4_when_candidate_fails_gate(monkeypatch):
+    pytest.importorskip("weave")
     monkeypatch.setattr(codex_evals, "ensure_wandb_api_key", lambda: "x")
     set_wandb_target_env(monkeypatch)
     monkeypatch.setattr(codex_evals, "HAS_WEAVE", True)
@@ -834,6 +837,7 @@ def test_main_prints_local_mode_when_wandb_api_key_missing(
 def test_main_succeeds_without_optional_builtin_scorer_columns(
     monkeypatch, capsys, tmp_path
 ):
+    pytest.importorskip("weave")
     monkeypatch.setattr(codex_evals, "ensure_wandb_api_key", lambda: "x")
     set_wandb_target_env(monkeypatch)
     monkeypatch.setattr(codex_evals, "HAS_WEAVE", True)
@@ -966,6 +970,7 @@ def test_regression_gate_handles_zero_baseline_values():
 def test_eval_main_black_box_detects_agents_language_variant(
     monkeypatch, capsys, tmp_path, install_fake_codex
 ):
+    pytest.importorskip("weave")
     monkeypatch.setattr(codex_evals, "ensure_wandb_api_key", lambda: "x")
     set_wandb_target_env(monkeypatch)
     monkeypatch.setattr(codex_evals, "HAS_WEAVE", True)

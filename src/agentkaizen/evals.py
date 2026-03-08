@@ -24,7 +24,12 @@ from agentkaizen._local_eval import (
 
 if HAS_WEAVE:
     import weave
-    from weave.scorers import PydanticScorer, ValidJSONScorer
+
+    try:
+        from weave.scorers import PydanticScorer, ValidJSONScorer
+    except ImportError:
+        # weave installed without [scorers] extras — fall back to local scorers
+        HAS_WEAVE = False
 
 from agentkaizen.runners import get_runner
 from agentkaizen.runners.base import AgentRunError

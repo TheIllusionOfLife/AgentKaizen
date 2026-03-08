@@ -2,6 +2,8 @@ import pathlib
 import sys
 from types import SimpleNamespace
 
+import pytest
+
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 import agentkaizen.casegen as codex_casegen
@@ -49,6 +51,7 @@ def test_redact_prompt_applies_patterns():
 
 
 def test_fetch_recent_codex_cases_dedupes_on_the_fly(monkeypatch):
+    pytest.importorskip("weave")
     calls = [
         SimpleNamespace(
             op_name="run_codex_exec_traced",
@@ -108,6 +111,7 @@ def test_build_case_from_interactive_trace():
 
 
 def test_fetch_recent_interactive_cases_dedupes_by_thread_name(monkeypatch):
+    pytest.importorskip("weave")
     calls = [
         SimpleNamespace(
             op_name="ingest_interactive_session_traced",
