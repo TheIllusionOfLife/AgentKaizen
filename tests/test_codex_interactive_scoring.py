@@ -409,8 +409,11 @@ def test_scoring_main_end_to_end_formats_session_analysis(
     )
     monkeypatch.setenv("WANDB_API_KEY", "x")
     set_wandb_target_env(monkeypatch)
-    monkeypatch.setattr(codex_interactive_scoring.weave, "init", lambda _project: None)
-    monkeypatch.setattr(codex_interactive_scoring.weave, "op", lambda: lambda fn: fn)
+    monkeypatch.setattr(codex_interactive_scoring, "HAS_WEAVE", True)
+    monkeypatch.setattr(codex_interactive_scoring, "weave_init", lambda _project: None)
+    monkeypatch.setattr(
+        codex_interactive_scoring, "weave_op", lambda **kw: lambda fn: fn
+    )
 
     rc = codex_interactive_scoring.main(["--trace-file", str(trace_file)])
 
@@ -482,8 +485,11 @@ def test_whole_session_end_to_end_sync_then_score(monkeypatch, capsys, tmp_path)
 
     monkeypatch.setenv("WANDB_API_KEY", "x")
     set_wandb_target_env(monkeypatch)
-    monkeypatch.setattr(codex_interactive_scoring.weave, "init", lambda _project: None)
-    monkeypatch.setattr(codex_interactive_scoring.weave, "op", lambda: lambda fn: fn)
+    monkeypatch.setattr(codex_interactive_scoring, "HAS_WEAVE", True)
+    monkeypatch.setattr(codex_interactive_scoring, "weave_init", lambda _project: None)
+    monkeypatch.setattr(
+        codex_interactive_scoring, "weave_op", lambda **kw: lambda fn: fn
+    )
 
     rc = codex_interactive_scoring.main(["--trace-file", str(trace_file)])
 
@@ -548,14 +554,10 @@ def test_main_uses_context_manager_and_subagent_backend(monkeypatch, tmp_path, c
     )
     monkeypatch.setattr(codex_interactive_scoring, "ensure_wandb_api_key", lambda: "x")
     set_wandb_target_env(monkeypatch)
+    monkeypatch.setattr(codex_interactive_scoring, "HAS_WEAVE", True)
+    monkeypatch.setattr(codex_interactive_scoring, "weave_init", lambda *_a, **_k: None)
     monkeypatch.setattr(
-        codex_interactive_scoring,
-        "weave",
-        type(
-            "Weave",
-            (),
-            {"init": lambda *_a, **_k: None, "op": lambda *_a, **_k: lambda fn: fn},
-        )(),
+        codex_interactive_scoring, "weave_op", lambda **kw: lambda fn: fn
     )
     monkeypatch.setattr(
         codex_interactive_scoring,
@@ -648,14 +650,10 @@ def test_main_can_emit_json_with_flag(monkeypatch, tmp_path, capsys):
     )
     monkeypatch.setattr(codex_interactive_scoring, "ensure_wandb_api_key", lambda: "x")
     set_wandb_target_env(monkeypatch)
+    monkeypatch.setattr(codex_interactive_scoring, "HAS_WEAVE", True)
+    monkeypatch.setattr(codex_interactive_scoring, "weave_init", lambda *_a, **_k: None)
     monkeypatch.setattr(
-        codex_interactive_scoring,
-        "weave",
-        type(
-            "Weave",
-            (),
-            {"init": lambda *_a, **_k: None, "op": lambda *_a, **_k: lambda fn: fn},
-        )(),
+        codex_interactive_scoring, "weave_op", lambda **kw: lambda fn: fn
     )
     monkeypatch.setattr(
         codex_interactive_scoring,
@@ -926,8 +924,11 @@ def test_scoring_main_black_box_subagent_backend_emits_json(
 
     monkeypatch.setenv("WANDB_API_KEY", "x")
     set_wandb_target_env(monkeypatch)
-    monkeypatch.setattr(codex_interactive_scoring.weave, "init", lambda _project: None)
-    monkeypatch.setattr(codex_interactive_scoring.weave, "op", lambda: lambda fn: fn)
+    monkeypatch.setattr(codex_interactive_scoring, "HAS_WEAVE", True)
+    monkeypatch.setattr(codex_interactive_scoring, "weave_init", lambda _project: None)
+    monkeypatch.setattr(
+        codex_interactive_scoring, "weave_op", lambda **kw: lambda fn: fn
+    )
 
     rc = codex_interactive_scoring.main(["--trace-file", str(trace_file), "--json"])
 
@@ -968,8 +969,11 @@ def test_scoring_main_black_box_external_backend_uses_codex_runner(
 
     monkeypatch.setenv("WANDB_API_KEY", "x")
     set_wandb_target_env(monkeypatch)
-    monkeypatch.setattr(codex_interactive_scoring.weave, "init", lambda _project: None)
-    monkeypatch.setattr(codex_interactive_scoring.weave, "op", lambda: lambda fn: fn)
+    monkeypatch.setattr(codex_interactive_scoring, "HAS_WEAVE", True)
+    monkeypatch.setattr(codex_interactive_scoring, "weave_init", lambda _project: None)
+    monkeypatch.setattr(
+        codex_interactive_scoring, "weave_op", lambda **kw: lambda fn: fn
+    )
     install_fake_codex(default_workspace=tmp_path)
 
     rc = codex_interactive_scoring.main(

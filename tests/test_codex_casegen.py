@@ -77,18 +77,20 @@ def test_fetch_recent_codex_cases_dedupes_on_the_fly(monkeypatch):
         op_substring="run_codex_exec_traced",
         max_chars_padding=1,
         redact_patterns=[],
+        source="weave",
     )
 
     assert [case["prompt"] for case in result] == ["dup", "unique"]
 
 
-def test_main_missing_wandb_api_key_writes_to_stderr(monkeypatch, capsys):
+def test_main_runs_locally_when_wandb_api_key_missing(monkeypatch, capsys, tmp_path):
     monkeypatch.setattr(codex_casegen, "ensure_wandb_api_key", lambda: None)
-    rc = codex_casegen.main([])
+    monkeypatch.setattr(codex_casegen, "HAS_WEAVE", False)
+    output = tmp_path / "cases.jsonl"
+    rc = codex_casegen.main(["--output", str(output)])
     out = capsys.readouterr()
-    assert rc == 2
-    assert "WANDB_API_KEY" in out.err
-    assert out.out == ""
+    assert rc == 0
+    assert "local trace log" in out.err
 
 
 def test_build_case_from_interactive_trace():
@@ -138,6 +140,7 @@ def test_fetch_recent_interactive_cases_dedupes_by_thread_name(monkeypatch):
         op_substring="ingest_interactive_session_traced",
         max_chars_padding=5,
         redact_patterns=[],
+        source="weave",
     )
 
     assert len(result) == 1
@@ -147,9 +150,8 @@ def test_fetch_recent_interactive_cases_dedupes_by_thread_name(monkeypatch):
 def test_main_include_interactive_respects_limit(monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(codex_casegen, "ensure_wandb_api_key", lambda: "x")
     set_wandb_target_env(monkeypatch)
-    monkeypatch.setattr(
-        codex_casegen, "weave", SimpleNamespace(init=lambda *_args, **_kwargs: None)
-    )
+    monkeypatch.setattr(codex_casegen, "HAS_WEAVE", True)
+    monkeypatch.setattr(codex_casegen, "weave_init", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(
         codex_casegen,
         "fetch_recent_codex_cases",

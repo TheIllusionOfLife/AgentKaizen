@@ -10,9 +10,21 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-import weave
 from pydantic import BaseModel, ConfigDict, create_model
-from weave.scorers import PydanticScorer, ValidJSONScorer
+
+from agentkaizen._weave_compat import HAS_WEAVE, weave_init, weave_op
+
+from agentkaizen._local_eval import (
+    LocalEvaluation,
+    LocalModel,
+    LocalPydanticScorer,
+    LocalScorer,
+    LocalValidJSONScorer,
+)
+
+if HAS_WEAVE:
+    import weave
+    from weave.scorers import PydanticScorer, ValidJSONScorer
 
 from agentkaizen.runners import get_runner
 from agentkaizen.runners.base import AgentRunError
@@ -213,16 +225,28 @@ def copy_workspace(src_root: Path, dst_root: Path) -> None:
     )
 
 
-contains_all_scorer = weave.op()(score_contains_all)
-forbidden_absent_scorer = weave.op()(score_forbidden_absent)
-exact_match_scorer = weave.op()(score_exact_match)
-max_chars_scorer = weave.op()(score_max_chars)
-min_chars_scorer = weave.op()(score_min_chars)
-json_validity_scorer = weave.op()(score_json_validity)
-required_sections_scorer = weave.op()(score_required_sections)
-required_content_groups_scorer = weave.op()(score_required_content_groups)
-file_path_citations_scorer = weave.op()(score_file_path_citations)
-token_usage_scorer = weave.op()(score_token_usage)
+if HAS_WEAVE:
+    contains_all_scorer = weave.op()(score_contains_all)
+    forbidden_absent_scorer = weave.op()(score_forbidden_absent)
+    exact_match_scorer = weave.op()(score_exact_match)
+    max_chars_scorer = weave.op()(score_max_chars)
+    min_chars_scorer = weave.op()(score_min_chars)
+    json_validity_scorer = weave.op()(score_json_validity)
+    required_sections_scorer = weave.op()(score_required_sections)
+    required_content_groups_scorer = weave.op()(score_required_content_groups)
+    file_path_citations_scorer = weave.op()(score_file_path_citations)
+    token_usage_scorer = weave.op()(score_token_usage)
+else:
+    contains_all_scorer = score_contains_all
+    forbidden_absent_scorer = score_forbidden_absent
+    exact_match_scorer = score_exact_match
+    max_chars_scorer = score_max_chars
+    min_chars_scorer = score_min_chars
+    json_validity_scorer = score_json_validity
+    required_sections_scorer = score_required_sections
+    required_content_groups_scorer = score_required_content_groups
+    file_path_citations_scorer = score_file_path_citations
+    token_usage_scorer = score_token_usage
 
 
 def _extract_output_text(output: str | dict[str, Any]) -> str:
@@ -295,47 +319,93 @@ def _pydantic_model_from_json_schema(
     return model
 
 
-class BuiltinValidJSONCaseScorer(weave.Scorer):
-    name: str = "builtin_json_validity"
-    column_map: dict[str, str] | None = {"response_schema": "response_schema"}
+if HAS_WEAVE:
 
-    @weave.op()
-    def score(
-        self,
-        *,
-        output: str | dict[str, Any],
-        require_json: bool = False,
-        response_schema: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        del require_json
-        if response_schema is None:
-            return {"pass": True, "applicable": False, "json_valid": None}
-        result = ValidJSONScorer().score(output=_extract_output_text(output))
-        json_valid = bool(result.get("json_valid"))
-        return {"pass": json_valid, "applicable": True, "json_valid": json_valid}
+    class BuiltinValidJSONCaseScorer(weave.Scorer):
+        name: str = "builtin_json_validity"
+        column_map: dict[str, str] | None = {"response_schema": "response_schema"}
 
+        @weave.op()
+        def score(
+            self,
+            *,
+            output: str | dict[str, Any],
+            require_json: bool = False,
+            response_schema: dict[str, Any] | None = None,
+        ) -> dict[str, Any]:
+            del require_json
+            if response_schema is None:
+                return {"pass": True, "applicable": False, "json_valid": None}
+            result = ValidJSONScorer().score(output=_extract_output_text(output))
+            json_valid = bool(result.get("json_valid"))
+            return {"pass": json_valid, "applicable": True, "json_valid": json_valid}
 
-class BuiltinPydanticCaseScorer(weave.Scorer):
-    name: str = "builtin_pydantic"
-    column_map: dict[str, str] | None = {"response_schema": "response_schema"}
+    class BuiltinPydanticCaseScorer(weave.Scorer):
+        name: str = "builtin_pydantic"
+        column_map: dict[str, str] | None = {"response_schema": "response_schema"}
 
-    @weave.op()
-    def score(
-        self,
-        *,
-        output: str | dict[str, Any],
-        response_schema: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        if response_schema is None:
-            return {"pass": True, "applicable": False, "valid_pydantic": None}
-        model = _pydantic_model_from_json_schema(response_schema)
-        result = PydanticScorer(model=model).score(output=_extract_output_text(output))
-        valid_pydantic = bool(result.get("valid_pydantic"))
-        return {
-            "pass": valid_pydantic,
-            "applicable": True,
-            "valid_pydantic": valid_pydantic,
-        }
+        @weave.op()
+        def score(
+            self,
+            *,
+            output: str | dict[str, Any],
+            response_schema: dict[str, Any] | None = None,
+        ) -> dict[str, Any]:
+            if response_schema is None:
+                return {"pass": True, "applicable": False, "valid_pydantic": None}
+            model = _pydantic_model_from_json_schema(response_schema)
+            result = PydanticScorer(model=model).score(
+                output=_extract_output_text(output)
+            )
+            valid_pydantic = bool(result.get("valid_pydantic"))
+            return {
+                "pass": valid_pydantic,
+                "applicable": True,
+                "valid_pydantic": valid_pydantic,
+            }
+
+else:
+
+    class BuiltinValidJSONCaseScorer(LocalScorer):  # type: ignore[no-redef]
+        name: str = "builtin_json_validity"
+        column_map = {"response_schema": "response_schema"}
+
+        def score(
+            self,
+            *,
+            output: str | dict[str, Any],
+            require_json: bool = False,
+            response_schema: dict[str, Any] | None = None,
+        ) -> dict[str, Any]:
+            del require_json
+            if response_schema is None:
+                return {"pass": True, "applicable": False, "json_valid": None}
+            result = LocalValidJSONScorer().score(output=_extract_output_text(output))
+            json_valid = bool(result.get("json_valid"))
+            return {"pass": json_valid, "applicable": True, "json_valid": json_valid}
+
+    class BuiltinPydanticCaseScorer(LocalScorer):  # type: ignore[no-redef]
+        name: str = "builtin_pydantic"
+        column_map = {"response_schema": "response_schema"}
+
+        def score(
+            self,
+            *,
+            output: str | dict[str, Any],
+            response_schema: dict[str, Any] | None = None,
+        ) -> dict[str, Any]:
+            if response_schema is None:
+                return {"pass": True, "applicable": False, "valid_pydantic": None}
+            pydantic_model = _pydantic_model_from_json_schema(response_schema)
+            result = LocalPydanticScorer(model=pydantic_model).score(
+                output=_extract_output_text(output)
+            )
+            valid_pydantic = bool(result.get("valid_pydantic"))
+            return {
+                "pass": valid_pydantic,
+                "applicable": True,
+                "valid_pydantic": valid_pydantic,
+            }
 
 
 def _dataset_has_field(cases: list[dict[str, Any]], field_name: str) -> bool:
@@ -373,7 +443,10 @@ def normalize_codex_args(codex_args: list[str]) -> list[str]:
     return [*codex_args, "--skip-git-repo-check"]
 
 
-class CodexVariantModel(weave.Model):
+_ModelBase = weave.Model if HAS_WEAVE else LocalModel
+
+
+class CodexVariantModel(_ModelBase):
     workspace: str
     codex_model: str | None = None
     sandbox: str | None = None
@@ -381,7 +454,7 @@ class CodexVariantModel(weave.Model):
     codex_args: list[str] = []
     timeout_seconds: int = 300
 
-    @weave.op()
+    @weave_op()
     def predict(self, prompt: str) -> dict[str, Any]:
         runner = get_runner(
             "codex",
@@ -783,14 +856,24 @@ def main(argv: list[str] | None = None) -> int:
     config = load_config()
     config = merge_cli_args(config, args)
 
-    if not ensure_wandb_api_key():
-        print("WANDB_API_KEY is required to run evals.", file=sys.stderr)
-        return 2
-    try:
-        project_path = resolve_weave_project(config.entity, config.project)
-    except ValueError as exc:
-        print(str(exc), file=sys.stderr)
-        return 2
+    tracing_enabled = HAS_WEAVE and bool(ensure_wandb_api_key())
+    if tracing_enabled:
+        try:
+            project_path = resolve_weave_project(config.entity, config.project)
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+    else:
+        if not HAS_WEAVE:
+            print(
+                "info: weave not installed — running in local-only mode.",
+                file=sys.stderr,
+            )
+        elif not ensure_wandb_api_key():
+            print(
+                "info: WANDB_API_KEY not set — running in local-only mode.",
+                file=sys.stderr,
+            )
 
     repo_root = Path.cwd()
     try:
@@ -799,7 +882,8 @@ def main(argv: list[str] | None = None) -> int:
         print(str(exc), file=sys.stderr)
         return 2
 
-    weave.init(project_path)
+    if tracing_enabled:
+        weave_init(project_path)
     variants = _variants_from_args(args.variant_file)
 
     variant_results: list[dict[str, Any]] = []
@@ -833,12 +917,20 @@ def main(argv: list[str] | None = None) -> int:
                 codex_args=resolved_config["codex_args"],
                 timeout_seconds=config.timeout_seconds,
             )
-            evaluation = weave.Evaluation(
-                name=f"codex-doc-impact-{variant['name']}",
-                dataset=cases,
-                scorers=build_eval_scorers(cases),
-            )
-            result = asyncio.run(evaluation.evaluate(model))
+            if HAS_WEAVE and tracing_enabled:
+                evaluation = weave.Evaluation(
+                    name=f"codex-doc-impact-{variant['name']}",
+                    dataset=cases,
+                    scorers=build_eval_scorers(cases),
+                )
+                result = asyncio.run(evaluation.evaluate(model))
+            else:
+                evaluation = LocalEvaluation(
+                    name=f"codex-doc-impact-{variant['name']}",
+                    dataset=cases,
+                    scorers=build_eval_scorers(cases),
+                )
+                result = evaluation.evaluate(model)
             item = {"variant": variant["name"], "summary": result}
             variant_results.append(item)
             print(json.dumps(item, ensure_ascii=True))

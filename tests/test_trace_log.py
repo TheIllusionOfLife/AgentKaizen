@@ -40,12 +40,12 @@ def test_filter_by_op_name_substring(tmp_path):
     log_path = tmp_path / "traces.jsonl"
 
     append_trace({"a": 1}, op_name="run_codex_exec_traced", log_path=log_path)
-    append_trace({"b": 2}, op_name="ingest_interactive_session_traced", log_path=log_path)
+    append_trace(
+        {"b": 2}, op_name="ingest_interactive_session_traced", log_path=log_path
+    )
     append_trace({"c": 3}, op_name="run_codex_exec_traced", log_path=log_path)
 
-    traces = read_traces(
-        log_path=log_path, op_name_substring="run_codex_exec_traced"
-    )
+    traces = read_traces(log_path=log_path, op_name_substring="run_codex_exec_traced")
     assert len(traces) == 2
     assert all("run_codex_exec_traced" in t["op_name"] for t in traces)
 

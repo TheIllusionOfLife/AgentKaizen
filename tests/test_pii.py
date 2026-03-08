@@ -19,7 +19,9 @@ def _disable_redaction():
 def test_configure_sets_state():
     configure_pii_redaction(enabled=True, fields=["prompt", "output"])
     # Verify through redaction behavior
-    result = redact_pii_local({"prompt": "user@example.com", "other": "user@example.com"})
+    result = redact_pii_local(
+        {"prompt": "user@example.com", "other": "user@example.com"}
+    )
     assert "[EMAIL_REDACTED]" in result["prompt"]
     assert result["other"] == "user@example.com"
     _disable_redaction()

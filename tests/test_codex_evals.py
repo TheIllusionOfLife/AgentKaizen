@@ -712,7 +712,8 @@ def test_quality_score_includes_exact_match_when_baseline_requires_it():
 def test_main_returns_4_when_candidate_fails_gate(monkeypatch):
     monkeypatch.setattr(codex_evals, "ensure_wandb_api_key", lambda: "x")
     set_wandb_target_env(monkeypatch)
-    monkeypatch.setattr(codex_evals.weave, "init", lambda _project: None)
+    monkeypatch.setattr(codex_evals, "HAS_WEAVE", True)
+    monkeypatch.setattr(codex_evals, "weave_init", lambda _project: None)
     monkeypatch.setattr(
         codex_evals, "load_cases_jsonl", lambda _path: [{"prompt": "p"}]
     )
@@ -786,13 +787,48 @@ def test_quality_score_uses_applicable_counts_for_mixed_activation():
     assert quality == (10 + 10 + 10 + (0.8 * 2)) / (10 + 10 + 10 + 2)
 
 
-def test_main_missing_wandb_api_key_writes_to_stderr(monkeypatch, capsys):
+def test_main_prints_local_mode_when_wandb_api_key_missing(
+    monkeypatch, capsys, tmp_path
+):
     monkeypatch.setattr(codex_evals, "ensure_wandb_api_key", lambda: None)
-    rc = codex_evals.main([])
+    monkeypatch.setattr(codex_evals, "HAS_WEAVE", False)
+    cases_path = tmp_path / "cases.jsonl"
+    cases_path.write_text(
+        json.dumps(
+            {
+                "prompt": "p1",
+                "must_contain": [],
+                "must_not_contain": [],
+                "max_chars": 10,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(codex_evals, "copy_workspace", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        codex_evals, "materialize_external_variant_inputs", lambda *_args, **_kwargs: {}
+    )
+    monkeypatch.setattr(
+        codex_evals, "apply_variant_edits", lambda *_args, **_kwargs: None
+    )
+
+    class FakeModel:
+        def __init__(self, **kwargs):
+            pass
+
+        def predict(self, prompt):
+            return {
+                "text": "ok",
+                "usage": {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2},
+            }
+
+    monkeypatch.setattr(codex_evals, "CodexVariantModel", FakeModel)
+
+    rc = codex_evals.main(["--cases", str(cases_path)])
     out = capsys.readouterr()
-    assert rc == 2
-    assert "WANDB_API_KEY" in out.err
-    assert out.out == ""
+    assert rc == 0
+    assert "local-only mode" in out.err
 
 
 def test_main_succeeds_without_optional_builtin_scorer_columns(
@@ -800,7 +836,8 @@ def test_main_succeeds_without_optional_builtin_scorer_columns(
 ):
     monkeypatch.setattr(codex_evals, "ensure_wandb_api_key", lambda: "x")
     set_wandb_target_env(monkeypatch)
-    monkeypatch.setattr(codex_evals.weave, "init", lambda _project: None)
+    monkeypatch.setattr(codex_evals, "HAS_WEAVE", True)
+    monkeypatch.setattr(codex_evals, "weave_init", lambda _project: None)
 
     cases_path = tmp_path / "cases.jsonl"
     cases_path.write_text(
@@ -931,7 +968,8 @@ def test_eval_main_black_box_detects_agents_language_variant(
 ):
     monkeypatch.setattr(codex_evals, "ensure_wandb_api_key", lambda: "x")
     set_wandb_target_env(monkeypatch)
-    monkeypatch.setattr(codex_evals.weave, "init", lambda _project: None)
+    monkeypatch.setattr(codex_evals, "HAS_WEAVE", True)
+    monkeypatch.setattr(codex_evals, "weave_init", lambda _project: None)
     install_fake_codex()
 
     repo_root = tmp_path / "repo"

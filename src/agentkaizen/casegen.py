@@ -9,8 +9,11 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-import weave
-from weave.trace.context import weave_client_context
+from agentkaizen._trace_log import read_traces
+from agentkaizen._weave_compat import HAS_WEAVE, weave_init
+
+if HAS_WEAVE:
+    from weave.trace.context import weave_client_context
 
 from agentkaizen.core import ensure_wandb_api_key, resolve_weave_project
 
@@ -89,7 +92,7 @@ def write_cases_jsonl(path: Path, cases: list[dict[str, Any]]) -> None:
     path.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
 
 
-def fetch_recent_codex_cases(
+def _fetch_codex_cases_from_weave(
     *,
     limit: int,
     op_substring: str,
@@ -151,7 +154,69 @@ def fetch_recent_codex_cases(
     return cases[:limit]
 
 
-def fetch_recent_interactive_cases(
+def _fetch_codex_cases_from_local(
+    *,
+    limit: int,
+    op_substring: str,
+    max_chars_padding: int,
+    redact_patterns: list[str],
+) -> list[dict[str, Any]]:
+    traces = read_traces(
+        limit=max(limit * 5, 50),
+        op_name_substring=op_substring,
+        sort_by=[{"field": "started_at", "direction": "desc"}],
+    )
+    cases: list[dict[str, Any]] = []
+    seen_prompts: set[str] = set()
+
+    for trace in traces:
+        output = trace.get("output", {})
+        if not isinstance(output, dict):
+            continue
+        if output.get("returncode") != 0:
+            continue
+        if "prompt" not in output:
+            continue
+
+        case = build_case_from_call_output(output, max_chars_padding=max_chars_padding)
+        case["prompt"] = redact_prompt(case["prompt"], redact_patterns)
+        if case["prompt"] in seen_prompts:
+            continue
+        seen_prompts.add(case["prompt"])
+        cases.append(case)
+        if len(cases) >= limit:
+            break
+
+    return cases[:limit]
+
+
+def fetch_recent_codex_cases(
+    *,
+    limit: int,
+    op_substring: str,
+    max_chars_padding: int,
+    redact_patterns: list[str],
+    source: str = "auto",
+) -> list[dict[str, Any]]:
+    resolved = source
+    if resolved == "auto":
+        resolved = "weave" if HAS_WEAVE else "local"
+    if resolved == "weave":
+        return _fetch_codex_cases_from_weave(
+            limit=limit,
+            op_substring=op_substring,
+            max_chars_padding=max_chars_padding,
+            redact_patterns=redact_patterns,
+        )
+    return _fetch_codex_cases_from_local(
+        limit=limit,
+        op_substring=op_substring,
+        max_chars_padding=max_chars_padding,
+        redact_patterns=redact_patterns,
+    )
+
+
+def _fetch_interactive_cases_from_weave(
     *,
     limit: int,
     op_substring: str,
@@ -194,6 +259,68 @@ def fetch_recent_interactive_cases(
             break
 
     return cases[:limit]
+
+
+def _fetch_interactive_cases_from_local(
+    *,
+    limit: int,
+    op_substring: str,
+    max_chars_padding: int,
+    redact_patterns: list[str],
+) -> list[dict[str, Any]]:
+    traces = read_traces(
+        limit=max(limit * 5, 50),
+        op_name_substring=op_substring,
+        sort_by=[{"field": "started_at", "direction": "desc"}],
+    )
+    cases: list[dict[str, Any]] = []
+    seen_prompts: set[str] = set()
+
+    for trace in traces:
+        output = trace.get("output", {})
+        if not isinstance(output, dict):
+            continue
+        if output.get("source") != "codex_interactive":
+            continue
+
+        case = build_case_from_interactive_trace(
+            output, max_chars_padding=max_chars_padding
+        )
+        case["prompt"] = redact_prompt(case["prompt"], redact_patterns)
+        if case["prompt"] in seen_prompts:
+            continue
+        seen_prompts.add(case["prompt"])
+        cases.append(case)
+        if len(cases) >= limit:
+            break
+
+    return cases[:limit]
+
+
+def fetch_recent_interactive_cases(
+    *,
+    limit: int,
+    op_substring: str,
+    max_chars_padding: int,
+    redact_patterns: list[str],
+    source: str = "auto",
+) -> list[dict[str, Any]]:
+    resolved = source
+    if resolved == "auto":
+        resolved = "weave" if HAS_WEAVE else "local"
+    if resolved == "weave":
+        return _fetch_interactive_cases_from_weave(
+            limit=limit,
+            op_substring=op_substring,
+            max_chars_padding=max_chars_padding,
+            redact_patterns=redact_patterns,
+        )
+    return _fetch_interactive_cases_from_local(
+        limit=limit,
+        op_substring=op_substring,
+        max_chars_padding=max_chars_padding,
+        redact_patterns=redact_patterns,
+    )
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -240,6 +367,12 @@ def _build_parser() -> argparse.ArgumentParser:
         default=[],
         help="Regex pattern to redact from prompts before writing cases (repeatable)",
     )
+    parser.add_argument(
+        "--source",
+        choices=["auto", "local", "weave"],
+        default="auto",
+        help="Trace source: auto (default), local (JSONL), or weave (W&B)",
+    )
     return parser
 
 
@@ -252,22 +385,33 @@ def main(argv: list[str] | None = None) -> int:
     config = load_config()
     config = merge_cli_args(config, args)
 
-    if not ensure_wandb_api_key():
-        print("WANDB_API_KEY is required to generate cases.", file=sys.stderr)
-        return 2
-    try:
-        project_path = resolve_weave_project(config.entity, config.project)
-    except ValueError as exc:
-        print(str(exc), file=sys.stderr)
-        return 2
+    source = args.source
+    if source == "auto":
+        tracing_enabled = HAS_WEAVE and bool(ensure_wandb_api_key())
+        source = "weave" if tracing_enabled else "local"
 
-    weave.init(project_path)
+    if source == "weave":
+        if not ensure_wandb_api_key():
+            print("WANDB_API_KEY is required for weave source.", file=sys.stderr)
+            return 2
+        try:
+            project_path = resolve_weave_project(config.entity, config.project)
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        weave_init(project_path)
+    else:
+        print(
+            "info: using local trace log as case source.",
+            file=sys.stderr,
+        )
 
     new_cases = fetch_recent_codex_cases(
         limit=args.limit,
         op_substring=args.op_substring,
         max_chars_padding=args.max_chars_padding,
         redact_patterns=args.redact_regex,
+        source=source,
     )
     if args.include_interactive:
         interactive_cases = fetch_recent_interactive_cases(
@@ -275,6 +419,7 @@ def main(argv: list[str] | None = None) -> int:
             op_substring=args.interactive_op_substring,
             max_chars_padding=args.max_chars_padding,
             redact_patterns=args.redact_regex,
+            source=source,
         )
         new_cases = deduplicate_cases_by_prompt([*new_cases, *interactive_cases])[
             : args.limit

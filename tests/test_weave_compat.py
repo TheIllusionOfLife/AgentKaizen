@@ -5,7 +5,7 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
-from agentkaizen._weave_compat import HAS_WEAVE, weave_init, weave_op
+from agentkaizen._weave_compat import HAS_WEAVE, weave_op
 
 
 def test_has_weave_is_bool():

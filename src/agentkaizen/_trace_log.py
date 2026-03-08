@@ -97,9 +97,7 @@ def read_traces(
         if not isinstance(entry, dict):
             continue
 
-        if op_name_substring and op_name_substring not in str(
-            entry.get("op_name", "")
-        ):
+        if op_name_substring and op_name_substring not in str(entry.get("op_name", "")):
             continue
 
         entries.append(entry)

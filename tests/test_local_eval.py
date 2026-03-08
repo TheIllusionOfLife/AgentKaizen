@@ -30,7 +30,10 @@ from agentkaizen.scoring import (
 
 class EchoModel(LocalModel):
     def predict(self, prompt: str) -> dict[str, str]:
-        return {"text": prompt, "usage": {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15}}
+        return {
+            "text": prompt,
+            "usage": {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15},
+        }
 
 
 class FixedModel(LocalModel):
@@ -38,7 +41,10 @@ class FixedModel(LocalModel):
         self._response = response
 
     def predict(self, prompt: str) -> dict[str, str]:
-        return {"text": self._response, "usage": {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15}}
+        return {
+            "text": self._response,
+            "usage": {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15},
+        }
 
 
 # --- LocalValidJSONScorer ---
@@ -91,9 +97,7 @@ def test_column_map_maps_case_fields():
     case = {"prompt": "test", "response_schema": {"type": "object"}}
     model = EchoModel()
 
-    evaluation = LocalEvaluation(
-        name="test", dataset=[case], scorers=[scorer]
-    )
+    evaluation = LocalEvaluation(name="test", dataset=[case], scorers=[scorer])
     result = evaluation.evaluate(model)
     assert "mapped_test" in result
     pass_info = result["mapped_test"].get("has_schema", {})
@@ -143,8 +147,18 @@ def test_extra_case_keys_dont_cause_type_error():
 
 def test_bool_aggregation():
     cases = [
-        {"prompt": "hello", "must_contain": ["hello"], "must_not_contain": [], "max_chars": 100},
-        {"prompt": "world", "must_contain": ["missing"], "must_not_contain": [], "max_chars": 100},
+        {
+            "prompt": "hello",
+            "must_contain": ["hello"],
+            "must_not_contain": [],
+            "max_chars": 100,
+        },
+        {
+            "prompt": "world",
+            "must_contain": ["missing"],
+            "must_not_contain": [],
+            "max_chars": 100,
+        },
     ]
     model = EchoModel()
     evaluation = LocalEvaluation(
@@ -164,13 +178,21 @@ def test_bool_aggregation():
 
 def test_numeric_aggregation():
     cases = [
-        {"prompt": "short", "must_contain": [], "must_not_contain": [], "max_chars": 100},
-        {"prompt": "longer text", "must_contain": [], "must_not_contain": [], "max_chars": 100},
+        {
+            "prompt": "short",
+            "must_contain": [],
+            "must_not_contain": [],
+            "max_chars": 100,
+        },
+        {
+            "prompt": "longer text",
+            "must_contain": [],
+            "must_not_contain": [],
+            "max_chars": 100,
+        },
     ]
     model = EchoModel()
-    evaluation = LocalEvaluation(
-        name="test", dataset=cases, scorers=[score_max_chars]
-    )
+    evaluation = LocalEvaluation(name="test", dataset=cases, scorers=[score_max_chars])
     result = evaluation.evaluate(model)
 
     length_stats = result["score_max_chars"]["length"]
@@ -182,7 +204,9 @@ def test_numeric_aggregation():
 
 
 def test_model_latency_aggregated():
-    cases = [{"prompt": "p1", "must_contain": [], "must_not_contain": [], "max_chars": 100}]
+    cases = [
+        {"prompt": "p1", "must_contain": [], "must_not_contain": [], "max_chars": 100}
+    ]
     model = EchoModel()
     evaluation = LocalEvaluation(
         name="test", dataset=cases, scorers=[score_contains_all]

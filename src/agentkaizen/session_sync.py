@@ -14,8 +14,8 @@ import urllib.parse
 from datetime import UTC, datetime, timedelta
 from typing import Any, Callable
 
-import weave
-
+from agentkaizen._trace_log import append_trace
+from agentkaizen._weave_compat import HAS_WEAVE, weave_init, weave_op
 from agentkaizen.core import (
     _sanitize_path,
     apply_builtin_pii_redaction,
@@ -981,10 +981,11 @@ def _run_sync_once(
         recover_orphans=recover_orphans,
     )
 
-    @weave.op()
+    @weave_op()
     def ingest_interactive_session_traced(
         trace_payload: dict[str, Any],
     ) -> dict[str, Any]:
+        append_trace(trace_payload, op_name="ingest_interactive_session_traced")
         return trace_payload
 
     uploaded = 0
@@ -1042,17 +1043,28 @@ def main(argv: list[str] | None = None) -> int:
     config = load_config()
     config = merge_cli_args(config, args)
 
-    if not ensure_wandb_api_key():
-        print("WANDB_API_KEY is required to sync interactive traces.", file=sys.stderr)
-        return 2
-    try:
-        project_path = resolve_weave_project(config.entity, config.project)
-    except ValueError as exc:
-        print(str(exc), file=sys.stderr)
-        return 2
+    tracing_enabled = HAS_WEAVE and bool(ensure_wandb_api_key())
+    if tracing_enabled:
+        try:
+            project_path = resolve_weave_project(config.entity, config.project)
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+    else:
+        if not HAS_WEAVE:
+            print(
+                "info: weave not installed — running in local-only mode.",
+                file=sys.stderr,
+            )
+        elif not ensure_wandb_api_key():
+            print(
+                "info: WANDB_API_KEY not set — running in local-only mode.",
+                file=sys.stderr,
+            )
 
     configure_weave_pii_redaction(enabled=not args.no_redaction)
-    weave.init(project_path)
+    if tracing_enabled:
+        weave_init(project_path)
 
     session_root = pathlib.Path(args.session_root).expanduser().resolve()
     index_file = pathlib.Path(args.index_file).expanduser().resolve()

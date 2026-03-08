@@ -49,7 +49,10 @@ def fake_weave(monkeypatch):
             return deco
 
     fake = FakeWeave()
-    monkeypatch.setattr(codex_weave, "weave", fake)
+    monkeypatch.setattr(codex_weave, "HAS_WEAVE", True)
+    monkeypatch.setattr(codex_weave, "weave_init", fake.init)
+    monkeypatch.setattr(codex_weave, "weave_op", fake.op)
+    monkeypatch.setattr(codex_weave, "append_trace", lambda *a, **kw: None)
     return fake
 
 
@@ -165,15 +168,19 @@ def test_default_pii_redaction_fields_cover_input_content():
     assert "input_content" in codex_weave.DEFAULT_PII_REDACTION_FIELDS
 
 
-def test_main_returns_error_when_wandb_api_key_missing(monkeypatch, capsys, tmp_path):
+def test_main_runs_locally_when_wandb_api_key_missing(
+    monkeypatch, capsys, tmp_path, fake_subprocess_run
+):
     monkeypatch.delenv("WANDB_API_KEY", raising=False)
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(codex_weave, "append_trace", lambda *a, **kw: None)
+    fake_subprocess_run(final_message="ok")
 
     rc = codex_weave.main(["--prompt", "hello"])
 
     out = capsys.readouterr()
-    assert rc == 2
-    assert "WANDB_API_KEY" in out.err
+    assert rc == 0
+    assert "local-only mode" in out.err
 
 
 def test_load_wandb_api_key_from_env_file(tmp_path):

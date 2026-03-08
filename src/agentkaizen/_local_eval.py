@@ -195,7 +195,9 @@ def _aggregate(
                     "true_fraction": true_count / len(values) if values else 0.0,
                     "count": len(values),
                 }
-            elif all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in values):
+            elif all(
+                isinstance(v, (int, float)) and not isinstance(v, bool) for v in values
+            ):
                 field_summary[field] = {
                     "mean": sum(values) / len(values),
                     "count": len(values),
