@@ -317,7 +317,11 @@ def build_claude_code_trace(
         "session_id": _as_string(redactor(session_id)),
         "thread_name": safe_thread_name,
         "user_task": safe_user_task,
-        "cwd": _sanitize_path(redactor(_as_string(cwd))),
+        "cwd": (
+            _sanitize_path(redactor(_as_string(cwd)))
+            if redaction_enabled
+            else _as_string(cwd)
+        ),
         "git_branch": _as_string(redactor(git_branch)),
         "cli_version": _as_string(redactor(cli_version)),
         "started_at": started_at,
@@ -337,7 +341,11 @@ def build_claude_code_trace(
         "ingest_metadata": {
             "parser_version": PARSER_VERSION,
             "redaction_enabled": redaction_enabled,
-            "session_file": _sanitize_path(redactor(str(session_path))),
+            "session_file": (
+                _sanitize_path(redactor(str(session_path)))
+                if redaction_enabled
+                else str(session_path)
+            ),
             "malformed_lines": malformed_lines,
             "user_task_source": user_task_source,
         },
@@ -687,16 +695,17 @@ def _run_claude_sync_once(
             redactor=redactor,
             redaction_enabled=redaction_enabled,
         )
-        ingest_claude_code_session(trace)
-        _print_session_summary(trace)
         trace_status = trace.get("status", "")
-        # Only checkpoint complete sessions — incomplete sessions may still be
-        # in progress and should be retried on the next sync run.
+        _print_session_summary(trace)
+        # Only ingest and checkpoint complete sessions — incomplete sessions may
+        # still be in progress and should be retried on the next sync run.
+        # parse_error sessions are checkpointed (not ingested) to avoid infinite
+        # retries on permanently broken files.
         if trace_status == "complete":
+            ingest_claude_code_session(trace)
             uploaded += 1
             new_processed.append(str(session["path"]))
         elif trace_status == "parse_error":
-            # Checkpoint to avoid infinite retries on permanently broken files.
             new_processed.append(str(session["path"]))
 
     updated_state = dict(state)

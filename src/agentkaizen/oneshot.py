@@ -166,6 +166,22 @@ def main(argv: list[str] | None = None) -> int:
     if tracing_enabled:
         weave_init(project_path)
 
+    if config.agent == "claude-code":
+        codex_only_flags = {
+            "--sandbox": args.sandbox,
+            "--profile": args.profile,
+            "--image": args.image,
+            "--codex-arg": args.codex_arg,
+        }
+        invalid = [flag for flag, val in codex_only_flags.items() if val]
+        if invalid:
+            print(
+                f"error: {', '.join(invalid)} are Codex-only flags and cannot be used"
+                " with --agent claude-code",
+                file=sys.stderr,
+            )
+            return 1
+
     runner_kwargs: dict = {"model": config.model}
     if config.agent == "codex":
         runner_kwargs.update(
