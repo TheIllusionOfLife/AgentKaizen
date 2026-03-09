@@ -120,6 +120,12 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         default=None,
         help="Timeout for codex exec in seconds (default: 300)",
     )
+    parser.add_argument(
+        "--agent",
+        default=None,
+        choices=["codex", "claude-code"],
+        help="Agent runner to use (default: from config)",
+    )
     return parser
 
 
@@ -160,14 +166,33 @@ def main(argv: list[str] | None = None) -> int:
     if tracing_enabled:
         weave_init(project_path)
 
-    runner = get_runner(
-        config.agent,
-        model=config.model,
-        sandbox=args.sandbox,
-        profile=args.profile,
-        image_paths=args.image,
-        extra_args=args.codex_arg,
-    )
+    if config.agent == "claude-code":
+        codex_only_flags = {
+            "--sandbox": args.sandbox,
+            "--profile": args.profile,
+            "--image": args.image,
+            "--codex-arg": args.codex_arg,
+        }
+        invalid = [flag for flag, val in codex_only_flags.items() if val]
+        if invalid:
+            print(
+                f"error: {', '.join(invalid)} are Codex-only flags and cannot be used"
+                " with --agent claude-code",
+                file=sys.stderr,
+            )
+            return 1
+
+    runner_kwargs: dict = {"model": config.model}
+    if config.agent == "codex":
+        runner_kwargs.update(
+            {
+                "sandbox": args.sandbox,
+                "profile": args.profile,
+                "image_paths": args.image,
+                "extra_args": args.codex_arg,
+            }
+        )
+    runner = get_runner(config.agent, **runner_kwargs)
 
     @weave_op(name="run_codex_exec_traced")  # freeze op name across refactor
     def run_codex_exec_traced() -> dict:

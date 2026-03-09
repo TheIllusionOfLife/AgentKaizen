@@ -15,8 +15,10 @@ Those surfaces matter, but it is usually hard to tell which change actually help
 
 In practice, AgentKaizen helps you:
 - trace Codex CLI runs
+- trace Claude Code CLI runs
 - score outputs with lightweight guardrails
 - ingest and analyze interactive Codex sessions
+- ingest and analyze interactive Claude Code sessions
 - compare instruction and document variants with offline evals
 - turn real traces into reusable regression cases
 
@@ -99,6 +101,12 @@ Precedence: CLI flags > `[tool.agentkaizen]` > `AGENTKAIZEN_*` env vars > `WANDB
 uv run agentkaizen run --prompt "Say only: ok"
 ```
 
+Run with Claude Code instead of Codex:
+
+```bash
+uv run agentkaizen run --agent claude-code --prompt "Say only: ok"
+```
+
 Attach one or more images to the initial prompt:
 
 ```bash
@@ -125,6 +133,13 @@ uv run agentkaizen session sync \
   --poll-seconds 15 \
   --quiet-seconds 30
 ```
+
+### Ingest interactive Claude Code sessions
+```bash
+uv run agentkaizen session sync --agent claude-code --once
+```
+
+Sessions are read from `~/.claude/projects/<slug>/<uuid>.jsonl`. The sync state is persisted at `~/.agentkaizen/claude_code_sync_state.json`.
 
 ### Score an interactive trace
 ```bash
@@ -303,6 +318,7 @@ Key modules (all under `src/agentkaizen/`):
 - [`cli.py`](./src/agentkaizen/cli.py) — unified `agentkaizen` entry point
 - [`oneshot.py`](./src/agentkaizen/oneshot.py) — one-shot traced agent run (`agentkaizen run`)
 - [`session_sync.py`](./src/agentkaizen/session_sync.py) — interactive session ingestion
+- [`claude_code_session.py`](./src/agentkaizen/claude_code_session.py) — parses Claude Code JSONL sessions (`~/.claude/projects/`): discovery, trace building, sync flow
 - [`session_scoring.py`](./src/agentkaizen/session_scoring.py) — interactive trace scoring
 - [`evals.py`](./src/agentkaizen/evals.py) — offline variant comparison
 - [`casegen.py`](./src/agentkaizen/casegen.py) — draft case generation from traces

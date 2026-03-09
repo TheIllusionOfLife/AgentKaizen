@@ -412,7 +412,8 @@ def _as_string(value: Any) -> str:
 
 
 def _load_tool_command(tool_call: dict[str, Any]) -> str:
-    if tool_call.get("name") != "exec_command":
+    name = tool_call.get("name", "")
+    if name not in ("exec_command", "Bash"):
         return ""
     arguments = tool_call.get("arguments")
     if not isinstance(arguments, str):
@@ -422,7 +423,7 @@ def _load_tool_command(tool_call: dict[str, Any]) -> str:
     except json.JSONDecodeError:
         return arguments
     if isinstance(payload, dict):
-        return _as_string(payload.get("cmd"))
+        return _as_string(payload.get("cmd") or payload.get("command", ""))
     return ""
 
 
@@ -430,6 +431,8 @@ def _load_tool_output(tool_call: dict[str, Any]) -> dict[str, Any]:
     if tool_call.get("name") != "function_call_output":
         return {}
     raw_output = tool_call.get("output")
+    if isinstance(raw_output, dict):
+        return raw_output
     if not isinstance(raw_output, str):
         return {}
     try:
@@ -914,8 +917,8 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--session-root",
-        default=str(DEFAULT_SESSION_ROOT),
-        help="Path to Codex session files root",
+        default=None,
+        help="Path to session files root (default: agent-specific)",
     )
     parser.add_argument(
         "--index-file",
@@ -924,8 +927,8 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--state-file",
-        default=str(DEFAULT_STATE_FILE),
-        help="Path to sync checkpoint state JSON",
+        default=None,
+        help="Path to sync checkpoint state JSON (default: agent-specific)",
     )
     parser.add_argument(
         "--redact-regex",
@@ -942,6 +945,12 @@ def _build_parser() -> argparse.ArgumentParser:
         "--no-recover-orphans",
         action="store_true",
         help="Disable fallback scanning for completed session files missing from the index",
+    )
+    parser.add_argument(
+        "--agent",
+        default=None,
+        choices=["codex", "claude-code"],
+        help="Agent type for session sync (default: from config, then codex)",
     )
     return parser
 
@@ -1065,9 +1074,27 @@ def main(argv: list[str] | None = None) -> int:
                 file=sys.stderr,
             )
 
+    if config.agent == "claude-code":
+        from agentkaizen.claude_code_session import sync_claude_sessions
+
+        # Forward W&B settings from merged config into args so sync_claude_sessions
+        # sees entity/project even when set only in pyproject.toml or env vars.
+        if not getattr(args, "entity", None):
+            args.entity = config.entity
+        if not getattr(args, "project", None):
+            args.project = config.project
+        return sync_claude_sessions(args)
+
     configure_weave_pii_redaction(enabled=not args.no_redaction)
     if tracing_enabled:
         weave_init(project_path)
+
+    # Apply Codex-specific defaults (not set in argparser to avoid leaking into
+    # claude-code delegation where sync_claude_sessions uses its own defaults).
+    if args.session_root is None:
+        args.session_root = str(DEFAULT_SESSION_ROOT)
+    if args.state_file is None:
+        args.state_file = str(DEFAULT_STATE_FILE)
 
     session_root = pathlib.Path(args.session_root).expanduser().resolve()
     index_file = pathlib.Path(args.index_file).expanduser().resolve()

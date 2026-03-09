@@ -171,7 +171,7 @@ def _make_claude_stdout(result_text: str, is_error: bool = False) -> str:
 
 
 def test_claude_code_runner_run_returns_agent_result(monkeypatch):
-    def fake_run(cmd, capture_output, text, timeout, cwd):
+    def fake_run(cmd, capture_output, text, timeout, cwd, env=None):
         return SimpleNamespace(
             returncode=0,
             stdout=_make_claude_stdout("hello from claude"),
@@ -189,7 +189,7 @@ def test_claude_code_runner_run_returns_agent_result(monkeypatch):
 
 
 def test_claude_code_runner_run_raises_on_is_error(monkeypatch):
-    def fake_run(cmd, capture_output, text, timeout, cwd):
+    def fake_run(cmd, capture_output, text, timeout, cwd, env=None):
         return SimpleNamespace(
             returncode=0,
             stdout=_make_claude_stdout("oops", is_error=True),
@@ -204,7 +204,7 @@ def test_claude_code_runner_run_raises_on_is_error(monkeypatch):
 
 
 def test_claude_code_runner_run_raises_on_invalid_json(monkeypatch):
-    def fake_run(cmd, capture_output, text, timeout, cwd):
+    def fake_run(cmd, capture_output, text, timeout, cwd, env=None):
         return SimpleNamespace(returncode=0, stdout="not json", stderr="")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
@@ -215,7 +215,7 @@ def test_claude_code_runner_run_raises_on_invalid_json(monkeypatch):
 
 
 def test_claude_code_runner_run_raises_agent_run_error_on_timeout(monkeypatch):
-    def fake_run(cmd, capture_output, text, timeout, cwd):
+    def fake_run(cmd, capture_output, text, timeout, cwd, env=None):
         raise subprocess.TimeoutExpired(cmd=cmd, timeout=timeout)
 
     monkeypatch.setattr(subprocess, "run", fake_run)
@@ -223,6 +223,28 @@ def test_claude_code_runner_run_raises_agent_run_error_on_timeout(monkeypatch):
     runner = ClaudeCodeRunner()
     with pytest.raises(AgentRunError, match="timed out"):
         runner.run("prompt", timeout_seconds=1)
+
+
+def test_claude_code_runner_strips_claudecode_env(monkeypatch):
+    """CLAUDECODE env var must be removed so nested claude -p calls don't hang."""
+    captured: dict = {}
+
+    def fake_run(cmd, capture_output, text, timeout, cwd, env=None):
+        captured["env"] = env
+        return SimpleNamespace(
+            returncode=0,
+            stdout=_make_claude_stdout("ok"),
+            stderr="",
+        )
+
+    monkeypatch.setenv("CLAUDECODE", "1")
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    runner = ClaudeCodeRunner()
+    runner.run("prompt")
+
+    assert captured.get("env") is not None
+    assert "CLAUDECODE" not in captured["env"]
 
 
 # ---------------------------------------------------------------------------

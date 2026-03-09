@@ -34,7 +34,9 @@ Use `uv` for all Python workflows.
 Common commands:
 - `uv sync --group dev`
 - `uv run agentkaizen run --prompt "Say only: ok"`
+- `uv run agentkaizen run --agent claude-code --prompt "Say only: ok"`
 - `uv run agentkaizen session sync --once`
+- `uv run agentkaizen session sync --agent claude-code --once`
 - `uv run agentkaizen session score --trace-file path/to/interactive-trace.json`
 - `uv run agentkaizen eval casegen --limit 20 --output evals/cases.generated.jsonl`
 - `uv run agentkaizen eval --cases evals/cases --variant-file evals/variants/<file>.json`
@@ -89,6 +91,10 @@ When changing CLI behavior:
 - `agentkaizen eval` automatically adds `--skip-git-repo-check` to the Codex invocation unless it was already supplied.
 - Interactive scoring has two paths: a default structured local analysis path and an older external Codex-judge path. Prefer the default path unless you are intentionally changing the judge behavior.
 - `ClaudeCodeRunner` uses `claude -p <prompt> --output-format json` and parses `{"type": "result", "result": "..."}`. Token usage is not available in JSON output mode.
+- `ClaudeCodeRunner.run()` strips `CLAUDECODE` from the subprocess env so `claude -p` works from within an active Claude Code session. This prevents the nested call from hanging.
+- Claude Code sessions live at `~/.claude/projects/<slug>/<uuid>.jsonl`. `progress`, `system`, `file-history-snapshot`, and `queue-operation` records are skipped as high-volume noise during ingestion.
+- Claude Code completion detection: `stop_reason == "end_turn"` → `"complete/end_turn"`; a `last-prompt` record → `"complete/last_prompt"`; otherwise `"incomplete/no_signal"`.
+- `status`, `status_reason`, and `source` fields are restored after PII redaction to prevent presidio false positives on short tokens like `"end_turn"`.
 - Optional eval case fields must stay optional in the runner:
   - `response_schema` activates Weave's built-in JSON/schema scorers
   - datasets without those fields must still evaluate successfully

@@ -122,3 +122,28 @@ def test_extract_json_strips_markdown_fences():
 def test_extract_json_returns_plain_text_unchanged():
     raw = '{"pass": false}'
     assert _extract_json(raw) == '{"pass": false}'
+
+
+def test_llm_judge_per_case_rubric_overrides_global(monkeypatch):
+    """per-case judge_rubric kwarg must take precedence over the global rubric."""
+    used_prompts: list[str] = []
+
+    class CapturingRunner:
+        def run(self, prompt: str, *, workspace=None, timeout_seconds: int = 300):
+            used_prompts.append(prompt)
+            return _make_result('{"pass": true, "score": 1.0, "reasoning": "ok"}')
+
+    import agentkaizen._llm_judge as judge_mod
+
+    monkeypatch.setattr(judge_mod, "get_runner", lambda name, **kw: CapturingRunner())
+
+    scorer = LLMJudgeScorer(rubric="global rubric", runner_name="fake")
+    scorer.score(
+        output={"text": "answer"},
+        prompt="question",
+        judge_rubric="per-case rubric",
+    )
+
+    assert used_prompts, "runner was not called"
+    assert "per-case rubric" in used_prompts[0]
+    assert "global rubric" not in used_prompts[0]

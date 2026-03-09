@@ -3,7 +3,7 @@
 This is a project-owned workflow guide for running the AgentKaizen loop. All workflows work locally without W&B. For W&B Weave integration (remote tracing and dashboards), set `WANDB_API_KEY`, `WANDB_ENTITY`, and `WANDB_PROJECT` in `.env.local` or your shell, as described in the repository [README.md](../../README.md).
 
 ## Goal
-Use measurable experiments to improve Codex outputs by iterating on foundational documents and config surfaces (for example `AGENTS.md`, `README.md`, skills, and Codex profile/config choices).
+Use measurable experiments to improve Codex and Claude Code outputs by iterating on foundational documents and config surfaces (for example `AGENTS.md`, `README.md`, skills, and agent profile/config choices).
 
 ## Recommended First Experience
 If you want to demonstrate the full loop for a new user, start with the Japanese-response `AGENTS.md` example that already exists in this repo:
@@ -54,8 +54,16 @@ uv run agentkaizen eval casegen \
 - Use `--redact-regex` when prompts may include sensitive strings.
 
 4.6 Ingest and score interactive sessions
+
+Codex:
 ```bash
 uv run agentkaizen session sync --once
+uv run agentkaizen session score --trace-file path/to/interactive-trace.json
+```
+
+Claude Code:
+```bash
+uv run agentkaizen session sync --agent claude-code --once
 uv run agentkaizen session score --trace-file path/to/interactive-trace.json
 ```
 - Use interactive traces to find repeated user corrections, workflow violations, likely optimization surfaces, and concrete recommended changes.

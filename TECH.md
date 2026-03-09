@@ -37,7 +37,7 @@ There are two tracing modes in this project:
 - one-shot agent run tracing in `agentkaizen.oneshot` (`agentkaizen run`)
 - full interactive-session ingestion in `agentkaizen.session_sync` (`agentkaizen session sync`)
 
-The first tracks a single agent execution via `AgentRunner`. The second reconstructs an entire local Codex session into a structured trace payload.
+The first tracks a single agent execution via `AgentRunner`. The second reconstructs an entire local session into a structured trace payload. For Codex, sessions are read from `~/.codex/sessions/`; for Claude Code (`--agent claude-code`), `agentkaizen.claude_code_session` reads `~/.claude/projects/<slug>/<uuid>.jsonl` and reconstructs the same trace schema.
 
 ### Prompts, datasets, scorers, and models
 - Prompts come from direct CLI prompts, derived interactive tasks, and eval case files.
@@ -68,10 +68,12 @@ This project currently relies on environment variables for operational Weave beh
 - temporary local tracing disablement through `WEAVE_DISABLED=true`
 
 ## Constraints
-- The repo is designed around CLI agent output (Codex and Claude Code) and local Codex session files
+- The repo is designed around CLI agent output (Codex and Claude Code) and local session files
 - The project assumes reproducible CLI workflows rather than notebook-first workflows
 - No database or web service is maintained by this repo; Weave is the main persistence and analysis layer
 - Tests should remain fast and mostly unit-level, using monkeypatching instead of real networked runs
+- `CLAUDECODE` env var blocks nested `claude -p` calls; `ClaudeCodeRunner.run()` strips it automatically from the subprocess environment
+- Claude Code sessions contain no SQLite — pure JSONL at `~/.claude/projects/<slug>/<uuid>.jsonl`; no session index file exists, so the directory must be scanned for `*.jsonl` files
 
 ## Preferred Tooling
 - Use `uv` rather than ad hoc virtualenv or pip workflows
