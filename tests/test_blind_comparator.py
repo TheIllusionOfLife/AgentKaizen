@@ -56,7 +56,7 @@ def test_comparator_shuffles_outputs():
         patch("agentkaizen._comparator.random.random", return_value=0.3),
     ):
         # random() < 0.5 → swap
-        result = scorer.compare("output_a", "output_b", "test prompt")
+        scorer.compare("output_a", "output_b", "test prompt")
         # When swapped: A→B, B→A. Winner "A" in response maps to original "B"
         call_args = mock_runner.run.call_args[0][0]
         # Verify the prompt was built (contains response tags)
@@ -136,7 +136,9 @@ def test_comparator_parse_json():
     ):
         result = scorer.compare("a", "b", "prompt")
         assert result.winner == "tie"
-        assert "error" in result.reasoning.lower() or "failed" in result.reasoning.lower()
+        assert (
+            "error" in result.reasoning.lower() or "failed" in result.reasoning.lower()
+        )
 
 
 def test_comparator_tie():
@@ -186,9 +188,7 @@ def test_pairwise_integration():
     baseline_results = [
         {"idx": 0, "output": "baseline output", "prompt": "test prompt"}
     ]
-    variant_results = [
-        {"idx": 0, "output": "variant output", "prompt": "test prompt"}
-    ]
+    variant_results = [{"idx": 0, "output": "variant output", "prompt": "test prompt"}]
     cases = [{"prompt": "test prompt"}]
 
     comparison = run_pairwise_comparison(

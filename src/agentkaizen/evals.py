@@ -605,6 +605,23 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="PATH",
         help="Load scorers from Python file (explicit unsafe opt-in; file must define SCORERS list)",
     )
+    parser.add_argument(
+        "--runs",
+        type=int,
+        default=1,
+        help="Number of evaluation runs per variant (default: 1). Results show mean ± stddev.",
+    )
+    parser.add_argument(
+        "--compare",
+        action="store_true",
+        default=False,
+        help="Run blind A/B comparator between baseline and each candidate (report-only, does not affect gate).",
+    )
+    parser.add_argument(
+        "--compare-rubric",
+        default="",
+        help="Custom rubric for the blind comparator.",
+    )
     return parser
 
 
@@ -894,26 +911,206 @@ def rank_variant_results(
     return sorted(ranked, key=lambda item: item["quality_score"], reverse=True)
 
 
+def _extract_true_fraction_conservative(
+    summary: dict[str, Any], scorer_key: str
+) -> float:
+    """Extract true_fraction with conservative adjustment: mean - stddev."""
+    stats = summary.get(scorer_key, {}).get("pass", {})
+    fraction = float(stats.get("true_fraction", 0.0) or 0.0)
+    stddev = float(stats.get("stddev", 0.0) or 0.0)
+    return fraction - stddev
+
+
+def rank_variant_results_aggregated(
+    results: list[dict[str, Any]],
+    *,
+    quality_similar_threshold: float,
+    latency_regression_threshold: float,
+    token_regression_threshold: float,
+) -> list[dict[str, Any]]:
+    """Rank variants using dispersion-aware gating (mean - stddev for quality)."""
+    baseline_item = next(
+        (item for item in results if item["variant"] == "baseline"), None
+    )
+    baseline_summary = baseline_item["summary"] if baseline_item else {}
+    active_quality_keys = (
+        _active_quality_keys(baseline_summary)
+        if baseline_item
+        else [
+            "score_contains_all",
+            "score_forbidden_absent",
+            "score_exact_match",
+            "score_max_chars",
+        ]
+    )
+
+    baseline_quality = (
+        _quality_score(baseline_summary, active_quality_keys) if baseline_item else 0.0
+    )
+    baseline_latency = _extract_mean(baseline_summary, "model_latency")
+    baseline_tokens = _extract_mean(
+        baseline_summary, "score_token_usage", "total_tokens"
+    )
+
+    # For dispersion-aware gating: use conservative estimates
+    def _conservative_quality(summary: dict[str, Any]) -> float:
+        """Quality using mean - stddev for each scorer."""
+        row_count = 1.0
+        for key in active_quality_keys:
+            scorer_summary = summary.get(key, {})
+            if isinstance(scorer_summary, dict):
+                pass_stats = scorer_summary.get("pass", {})
+                if isinstance(pass_stats, dict):
+                    count = pass_stats.get("count", 0)
+                    if isinstance(count, (int, float)) and count > 0:
+                        row_count = float(count)
+                        break
+
+        weighted_passes = 0.0
+        total_applicable = 0.0
+        for key in active_quality_keys:
+            pass_stats = summary.get(key, {}).get("pass", {})
+            if not isinstance(pass_stats, dict):
+                continue
+            fraction = float(pass_stats.get("true_fraction", 0.0) or 0.0)
+            stddev = float(pass_stats.get("stddev", 0.0) or 0.0)
+            conservative = max(0.0, fraction - stddev)
+            weighted_passes += conservative * row_count
+            total_applicable += row_count
+        if total_applicable == 0:
+            return 0.0
+        return weighted_passes / total_applicable
+
+    ranked: list[dict[str, Any]] = []
+    for result in results:
+        summary = result["summary"]
+        quality_score = _quality_score(summary, active_quality_keys)
+        conservative_quality = _conservative_quality(summary)
+        latency_mean = _extract_mean(summary, "model_latency")
+        token_mean = _extract_mean(summary, "score_token_usage", "total_tokens")
+        quality_delta = quality_score - baseline_quality
+
+        # Detect n_runs from summary
+        n_runs = None
+        for key in active_quality_keys:
+            pass_stats = summary.get(key, {}).get("pass", {})
+            if isinstance(pass_stats, dict) and "n_runs" in pass_stats:
+                n_runs = pass_stats["n_runs"]
+                break
+
+        gate_pass = True
+        gate_reason = "baseline"
+        if result["variant"] != "baseline":
+            reasons: list[str] = []
+            baseline_conservative = (
+                _conservative_quality(baseline_summary) if baseline_item else 0.0
+            )
+            conservative_delta = conservative_quality - baseline_conservative
+            quality_similar = abs(conservative_delta) <= quality_similar_threshold
+            if quality_similar:
+                if (
+                    baseline_latency is not None
+                    and latency_mean is not None
+                    and latency_mean
+                    > baseline_latency * (1 + latency_regression_threshold)
+                ):
+                    reasons.append("latency_regression")
+                if (
+                    baseline_tokens is not None
+                    and token_mean is not None
+                    and token_mean > baseline_tokens * (1 + token_regression_threshold)
+                ):
+                    reasons.append("token_regression")
+            gate_pass = len(reasons) == 0
+            gate_reason = ",".join(reasons) if reasons else "pass"
+
+        item_result = {
+            **result,
+            "quality_score": quality_score,
+            "quality_delta_vs_baseline": quality_delta,
+            "latency_mean": latency_mean,
+            "token_mean": token_mean,
+            "gate_pass": gate_pass,
+            "gate_reason": gate_reason,
+        }
+        if n_runs is not None:
+            item_result["n_runs"] = n_runs
+        ranked.append(item_result)
+    return sorted(ranked, key=lambda item: item["quality_score"], reverse=True)
+
+
+def run_pairwise_comparison(
+    baseline_results: list[dict[str, Any]],
+    variant_results: list[dict[str, Any]],
+    cases: list[dict[str, Any]],
+    comparator: Any,
+) -> list[dict[str, Any]]:
+    """Run blind A/B comparison for each case: baseline vs candidate."""
+    comparisons: list[dict[str, Any]] = []
+    for idx in range(min(len(baseline_results), len(variant_results), len(cases))):
+        baseline_output = baseline_results[idx].get("output", "")
+        variant_output = variant_results[idx].get("output", "")
+        prompt = cases[idx].get("prompt", "")
+        result = comparator.compare(baseline_output, variant_output, prompt)
+        # Map A/B back to baseline/candidate
+        if result.winner == "A":
+            winner = "baseline"
+        elif result.winner == "B":
+            winner = "candidate"
+        else:
+            winner = "tie"
+        comparisons.append(
+            {
+                "case_idx": idx,
+                "winner": winner,
+                "rubric_scores": result.rubric_scores,
+                "reasoning": result.reasoning,
+                "winner_strengths": result.winner_strengths,
+                "loser_weaknesses": result.loser_weaknesses,
+            }
+        )
+    return comparisons
+
+
+def _format_fraction_with_dispersion(summary: dict[str, Any], scorer_key: str) -> str:
+    """Format true_fraction with ± stddev if multi-run data is present."""
+    stats = summary.get(scorer_key, {}).get("pass", {})
+    fraction = float(stats.get("true_fraction", 0.0) or 0.0)
+    stddev = stats.get("stddev")
+    n_runs = stats.get("n_runs")
+    if stddev is not None and n_runs is not None and n_runs > 1:
+        return f"{fraction:.3f} \u00b1 {stddev:.3f} (n={n_runs})"
+    return f"{fraction:.3f}"
+
+
 def render_ranked_summary_table(ranked: list[dict[str, Any]]) -> str:
     lines = ["Ranking Summary:"]
     for idx, item in enumerate(ranked, start=1):
         summary = item["summary"]
+        n_runs = item.get("n_runs")
+
+        # Quality score with dispersion
+        quality_str = f"{item['quality_score']:.3f}"
+        if n_runs is not None and n_runs > 1:
+            # Show n_runs in quality line
+            quality_str = f"{item['quality_score']:.3f} (n={n_runs})"
+
         lines.extend(
             [
                 f"{idx}. variant: {item['variant']}",
-                f"   quality_score: {item['quality_score']:.3f}",
+                f"   quality_score: {quality_str}",
                 f"   quality_delta_vs_baseline: {item['quality_delta_vs_baseline']:.3f}",
-                f"   contains_pass: {_extract_true_fraction(summary, 'score_contains_all'):.3f}",
-                f"   forbidden_pass: {_extract_true_fraction(summary, 'score_forbidden_absent'):.3f}",
-                f"   exact_match_pass: {_extract_true_fraction(summary, 'score_exact_match'):.3f}",
-                f"   max_chars_pass: {_extract_true_fraction(summary, 'score_max_chars'):.3f}",
-                f"   min_chars_pass: {_extract_true_fraction(summary, 'score_min_chars'):.3f}",
-                f"   json_pass: {_extract_true_fraction(summary, 'score_json_validity'):.3f}",
-                f"   builtin_json_pass: {_extract_true_fraction(summary, 'builtin_json_validity'):.3f}",
-                f"   schema_pass: {_extract_true_fraction(summary, 'builtin_pydantic'):.3f}",
-                f"   sections_pass: {_extract_true_fraction(summary, 'score_required_sections'):.3f}",
-                f"   content_groups_pass: {_extract_true_fraction(summary, 'score_required_content_groups'):.3f}",
-                f"   file_paths_pass: {_extract_true_fraction(summary, 'score_file_path_citations'):.3f}",
+                f"   contains_pass: {_format_fraction_with_dispersion(summary, 'score_contains_all')}",
+                f"   forbidden_pass: {_format_fraction_with_dispersion(summary, 'score_forbidden_absent')}",
+                f"   exact_match_pass: {_format_fraction_with_dispersion(summary, 'score_exact_match')}",
+                f"   max_chars_pass: {_format_fraction_with_dispersion(summary, 'score_max_chars')}",
+                f"   min_chars_pass: {_format_fraction_with_dispersion(summary, 'score_min_chars')}",
+                f"   json_pass: {_format_fraction_with_dispersion(summary, 'score_json_validity')}",
+                f"   builtin_json_pass: {_format_fraction_with_dispersion(summary, 'builtin_json_validity')}",
+                f"   schema_pass: {_format_fraction_with_dispersion(summary, 'builtin_pydantic')}",
+                f"   sections_pass: {_format_fraction_with_dispersion(summary, 'score_required_sections')}",
+                f"   content_groups_pass: {_format_fraction_with_dispersion(summary, 'score_required_content_groups')}",
+                f"   file_paths_pass: {_format_fraction_with_dispersion(summary, 'score_file_path_citations')}",
                 f"   latency_mean: {item['latency_mean'] if item['latency_mean'] is not None else 'n/a'}",
                 f"   total_tokens_mean: {item['token_mean'] if item['token_mean'] is not None else 'n/a'}",
                 f"   gate_pass: {item['gate_pass']}",
@@ -1103,6 +1300,20 @@ def main(argv: list[str] | None = None) -> int:
 
     tracing_enabled = HAS_WEAVE and bool(ensure_wandb_api_key())
 
+    # --runs > 1 and --compare force local eval mode
+    if args.runs > 1 and tracing_enabled:
+        print(
+            f"info: --runs {args.runs} forces local eval path.",
+            file=sys.stderr,
+        )
+        tracing_enabled = False
+    if args.compare and tracing_enabled:
+        print(
+            "info: --compare forces local eval path.",
+            file=sys.stderr,
+        )
+        tracing_enabled = False
+
     # If --judge-rubric is given, force local eval path before resolving project
     if args.judge_rubric and HAS_WEAVE_SCORERS and tracing_enabled:
         print(
@@ -1246,19 +1457,67 @@ def main(argv: list[str] | None = None) -> int:
                     dataset=cases,
                     scorers=scorers,
                 )
-                result = evaluation.evaluate(model)
+                if args.runs > 1:
+                    result = evaluation.evaluate_n(model, n=args.runs)
+                else:
+                    result = evaluation.evaluate(model)
                 per_case_by_variant[variant["name"]] = evaluation.per_case_results
             item = {"variant": variant["name"], "summary": result}
             variant_results.append(item)
             print(json.dumps(item, ensure_ascii=True))
 
-    ranked = rank_variant_results(
-        variant_results,
-        quality_similar_threshold=args.quality_similar_threshold,
-        latency_regression_threshold=args.latency_regression_threshold,
-        token_regression_threshold=args.token_regression_threshold,
-    )
+    # Use dispersion-aware ranking for multi-run, standard for single-run
+    if args.runs > 1:
+        ranked = rank_variant_results_aggregated(
+            variant_results,
+            quality_similar_threshold=args.quality_similar_threshold,
+            latency_regression_threshold=args.latency_regression_threshold,
+            token_regression_threshold=args.token_regression_threshold,
+        )
+    else:
+        ranked = rank_variant_results(
+            variant_results,
+            quality_similar_threshold=args.quality_similar_threshold,
+            latency_regression_threshold=args.latency_regression_threshold,
+            token_regression_threshold=args.token_regression_threshold,
+        )
     print(render_ranked_summary_table(ranked))
+
+    # Blind A/B comparison (report-only, does not affect gate)
+    if args.compare:
+        from agentkaizen._comparator import ComparatorScorer
+
+        comparator = ComparatorScorer(
+            rubric=args.compare_rubric,
+            runner_name=args.judge_runner,
+            model=args.judge_model,
+        )
+        baseline_cases = per_case_by_variant.get("baseline", [])
+        if baseline_cases:
+            for variant in variants:
+                if variant["name"] == "baseline":
+                    continue
+                candidate_cases = per_case_by_variant.get(variant["name"], [])
+                if not candidate_cases:
+                    continue
+                comparisons = run_pairwise_comparison(
+                    baseline_cases, candidate_cases, cases, comparator
+                )
+                print(f"\n--- Comparator: baseline vs {variant['name']} ---")
+                for comp in comparisons:
+                    print(
+                        f"  Case {comp['case_idx'] + 1}: winner={comp['winner']} "
+                        f"| {comp['reasoning'][:80]}"
+                    )
+                wins = sum(1 for c in comparisons if c["winner"] == "candidate")
+                losses = sum(1 for c in comparisons if c["winner"] == "baseline")
+                ties = sum(1 for c in comparisons if c["winner"] == "tie")
+                print(f"  Wins: {wins}, Losses: {losses}, Ties: {ties}")
+        else:
+            print(
+                "info: --compare requires local eval path with per-case results.",
+                file=sys.stderr,
+            )
 
     if args.show_outputs:
         variant_names = [v["name"] for v in variants]

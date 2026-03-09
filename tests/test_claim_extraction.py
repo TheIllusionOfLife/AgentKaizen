@@ -28,8 +28,16 @@ def test_build_evidence_slices():
             {"role": "user", "content": "That looks wrong, fix it"},
         ],
         "tool_calls": [
-            {"name": "bash", "arguments": "git checkout -b feat/test", "output": "Switched to branch"},
-            {"name": "read", "arguments": "/path/to/file.py", "output": "file contents" * 50},
+            {
+                "name": "bash",
+                "arguments": "git checkout -b feat/test",
+                "output": "Switched to branch",
+            },
+            {
+                "name": "read",
+                "arguments": "/path/to/file.py",
+                "output": "file contents" * 50,
+            },
         ],
     }
 

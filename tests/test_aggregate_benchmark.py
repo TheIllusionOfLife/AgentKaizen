@@ -11,7 +11,7 @@ from agentkaizen._local_eval import (
     LocalModel,
     _aggregate,
 )
-from agentkaizen.scoring import score_contains_all, score_max_chars
+from agentkaizen.scoring import score_contains_all
 
 
 # --- Helper models ---
