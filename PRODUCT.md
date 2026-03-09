@@ -6,25 +6,27 @@ AgentKaizen helps teams improve CLI-based AI coding agents with measurable exper
 The core problem is steerability. Users can influence agents through many surfaces, such as `AGENTS.md`, repository docs, skills, and tool configuration, but they often lack a reliable way to measure which changes actually improve behavior. AgentKaizen traces and evaluates locally by default, with optional W&B Weave integration for remote dashboards and trace inspection.
 
 ## Target Users
-- Advanced users of Codex or similar CLI-based coding agents
-- Teams maintaining project-specific agent instructions
+- Advanced users of Codex or Claude Code (or similar CLI-based coding agents)
+- Teams maintaining project-specific agent instructions (AGENTS.md, CLAUDE.md, skills)
 - Developers experimenting with prompt and document steering
 - Researchers or operators who want reproducible eval loops for agent behavior
 
 ## User Jobs
 Users come here to:
-- trace real Codex runs
+- trace real Codex or Claude Code runs
 - understand failures and friction in interactive sessions
 - turn real tasks into regression cases
 - compare baseline behavior against candidate instruction or document changes
 - promote only the changes that improve results without unacceptable regressions
 
 ## Core Features
-- Traced `codex exec` runs with guardrail scoring
-- Interactive Codex session ingestion and scoring
+- Traced one-shot agent runs with guardrail scoring (Codex and Claude Code)
+- Interactive session ingestion and scoring (Codex and Claude Code)
+- LLM-as-a-judge semantic scoring for eval cases
 - Offline evals for document, skill, and config variants
 - Draft case generation from recent traces
 - Ranking that considers quality, latency, and token usage
+- Agent Skill packaging for direct invocation from within Codex or Claude Code sessions
 
 ## Business and Product Goals
 - Make agent steering changes observable

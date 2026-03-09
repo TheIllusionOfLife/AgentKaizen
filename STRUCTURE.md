@@ -12,6 +12,8 @@
 - `tests/`: test suite
 - `scripts/`: thin wrapper scripts
 - `docs/`: secondary project docs and reference material
+- `skill/`: Agent Skill distribution (`skill/agentkaizen/SKILL.md` + `skill/agentkaizen.skill`)
+- `archive/`: stale hackathon artifacts (not part of the active codebase)
 
 ## Package Layout (`src/agentkaizen/`)
 - `cli.py`: unified `agentkaizen` entry point with subcommand dispatch
