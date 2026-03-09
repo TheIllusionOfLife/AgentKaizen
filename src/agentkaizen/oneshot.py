@@ -120,6 +120,12 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         default=None,
         help="Timeout for codex exec in seconds (default: 300)",
     )
+    parser.add_argument(
+        "--agent",
+        default=None,
+        choices=["codex", "claude-code"],
+        help="Agent runner to use (default: from config)",
+    )
     return parser
 
 

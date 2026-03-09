@@ -661,6 +661,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Emit the raw JSON scoring payload instead of the human summary.",
     )
     parser.add_argument("--timeout-seconds", type=int, default=None)
+    parser.add_argument(
+        "--agent",
+        default=None,
+        choices=["codex", "claude-code"],
+        help="Agent type hint (auto-detected from trace source field if omitted)",
+    )
     return parser
 
 

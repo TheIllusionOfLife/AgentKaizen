@@ -412,7 +412,8 @@ def _as_string(value: Any) -> str:
 
 
 def _load_tool_command(tool_call: dict[str, Any]) -> str:
-    if tool_call.get("name") != "exec_command":
+    name = tool_call.get("name", "")
+    if name not in ("exec_command", "Bash"):
         return ""
     arguments = tool_call.get("arguments")
     if not isinstance(arguments, str):
@@ -422,7 +423,7 @@ def _load_tool_command(tool_call: dict[str, Any]) -> str:
     except json.JSONDecodeError:
         return arguments
     if isinstance(payload, dict):
-        return _as_string(payload.get("cmd"))
+        return _as_string(payload.get("cmd") or payload.get("command", ""))
     return ""
 
 
@@ -430,6 +431,8 @@ def _load_tool_output(tool_call: dict[str, Any]) -> dict[str, Any]:
     if tool_call.get("name") != "function_call_output":
         return {}
     raw_output = tool_call.get("output")
+    if isinstance(raw_output, dict):
+        return raw_output
     if not isinstance(raw_output, str):
         return {}
     try:
@@ -943,6 +946,12 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Disable fallback scanning for completed session files missing from the index",
     )
+    parser.add_argument(
+        "--agent",
+        default="codex",
+        choices=["codex", "claude-code"],
+        help="Agent type for session sync (default: codex)",
+    )
     return parser
 
 
@@ -1064,6 +1073,11 @@ def main(argv: list[str] | None = None) -> int:
                 "info: WANDB_API_KEY not set — running in local-only mode.",
                 file=sys.stderr,
             )
+
+    if getattr(args, "agent", "codex") == "claude-code":
+        from agentkaizen.claude_code_session import sync_claude_sessions
+
+        return sync_claude_sessions(args)
 
     configure_weave_pii_redaction(enabled=not args.no_redaction)
     if tracing_enabled:

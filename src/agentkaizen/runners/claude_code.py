@@ -30,8 +30,13 @@ class ClaudeCodeRunner:
         workspace: Path | None = None,
         timeout_seconds: int = 300,
     ) -> AgentResult:
+        import os
+
         command = self.build_command(prompt, workspace=workspace)
         cwd = str(workspace) if workspace else None
+        # Strip CLAUDECODE so nested claude -p calls are not blocked when running
+        # from within an active Claude Code session (official skill-creator pattern).
+        env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
         try:
             proc = subprocess.run(
                 command,
@@ -39,6 +44,7 @@ class ClaudeCodeRunner:
                 text=True,
                 timeout=timeout_seconds,
                 cwd=cwd,
+                env=env,
             )
         except subprocess.TimeoutExpired as exc:
             raise AgentRunError(
