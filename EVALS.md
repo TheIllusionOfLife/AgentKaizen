@@ -7,16 +7,15 @@ The key idea is simple: steering surfaces such as `AGENTS.md`, `README.md`, skil
 
 ## What Gets Evaluated
 AgentKaizen currently evaluates four related things:
-- one-shot `codex exec` outputs
-- interactive session behavior after ingestion
-- interactive Claude Code session behavior after ingestion
+- one-shot agent outputs (Codex and Claude Code)
+- interactive session behavior after ingestion (Codex and Claude Code)
 - candidate document or config variants in offline evals
 - draft regression cases generated from recent traces
 
 ## Evaluation Building Blocks
 ### Prompts
 Prompts in this project come from several places:
-- direct prompts passed to `codex-weave`
+- direct prompts passed to `agentkaizen run`
 - derived user tasks from interactive session traces
 - curated rows in `evals/cases/*.jsonl`
 - generated draft cases created from past traces
@@ -30,7 +29,7 @@ The main offline eval dataset now lives under `evals/cases/` and is split into:
 - `multimodal.jsonl`
 
 ### Scorers
-The shared deterministic scorers live in `codex_scoring.py` and are used by `codex-eval`.
+The shared deterministic scorers live in `src/agentkaizen/scoring.py` and are used by `agentkaizen eval`.
 
 Current scorers:
 - required substring presence
@@ -43,6 +42,8 @@ Current scorers:
 - required content-group coverage
 - file path citation presence
 - token usage extraction
+
+An optional **LLM-as-a-judge** scorer (`LLMJudgeScorer` in `src/agentkaizen/_llm_judge.py`) complements the deterministic layer. Enable it globally with `--judge-rubric "..."` on `agentkaizen eval`, or per-case via the `judge_rubric` field in JSONL cases. It runs another agent call (configurable runner) to evaluate semantic quality.
 
 Built-in JSON/schema scorers depend on optional case fields:
 - `response_schema` enables built-in JSON/schema validation (uses Weave scorers when available, local equivalents otherwise)
@@ -63,7 +64,7 @@ They are not sufficient for:
 So the current scorer layer should be treated as production-usable guardrails, not complete answer-quality evaluation.
 
 ### Models
-Offline evals use `CodexVariantModel` (backed by `weave.Model` when Weave is installed, or `LocalModel` otherwise) in `codex_evals.py`.
+Offline evals use `CodexVariantModel` (backed by `weave.Model` when Weave is installed, or `LocalModel` otherwise) in `src/agentkaizen/evals.py`.
 
 This model represents an execution wrapper around a prepared candidate application configuration, not a provider SDK model wrapper. In practice, variant preparation means:
 - a temporary copy of the repo
@@ -75,7 +76,7 @@ This model represents an execution wrapper around a prepared candidate applicati
 
 ## Two Tracking Modes
 ### 1. One-shot tracing
-`codex-weave` runs a single `codex exec --json`, parses the event stream, and stores:
+`agentkaizen run` runs a single agent invocation (Codex or Claude Code), parses the output, and stores:
 - prompt
 - command
 - raw events
@@ -99,7 +100,7 @@ For Codex sessions, files are read from `~/.codex/sessions/`. For Claude Code, `
 This is useful when the unit of interest is the whole session rather than a single final answer.
 
 ## Offline Eval Flow
-The offline eval command is `codex-eval`.
+The offline eval command is `agentkaizen eval` (legacy alias: `codex-eval`).
 
 The flow is:
 1. Load the evaluation cases from `evals/cases/` or another JSONL suite path
@@ -162,8 +163,8 @@ It also derives structured labels such as:
 
 The scorer now distinguishes suspicious signals from definite workflow failures so high exploration cost does not automatically imply a workflow violation.
 
-### Optional external Codex judge
-When `--scoring-backend external` is used, the project runs another `codex exec` call as a structured judge.
+### Optional external Codex judge (session scoring)
+When `--scoring-backend external` is used for interactive session scoring, the project runs another `codex exec` call as a structured judge.
 
 That judge:
 - receives a prompt containing the derived `user_task` and `analysis_summary`
@@ -218,6 +219,7 @@ To improve evaluation quality over time:
 ## Related Files
 - `src/agentkaizen/evals.py` (legacy shim: `codex_evals.py`)
 - `src/agentkaizen/scoring.py` (legacy shim: `codex_scoring.py`)
+- `src/agentkaizen/_llm_judge.py` — `LLMJudgeScorer` for eval case semantic scoring
 - `src/agentkaizen/casegen.py` (legacy shim: `codex_casegen.py`)
 - `src/agentkaizen/session_sync.py` (legacy shim: `codex_interactive_sync.py`)
 - `src/agentkaizen/session_scoring.py` (legacy shim: `codex_interactive_scoring.py`)
