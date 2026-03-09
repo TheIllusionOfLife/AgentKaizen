@@ -948,9 +948,9 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--agent",
-        default="codex",
+        default=None,
         choices=["codex", "claude-code"],
-        help="Agent type for session sync (default: codex)",
+        help="Agent type for session sync (default: from config, then codex)",
     )
     return parser
 
@@ -1074,9 +1074,15 @@ def main(argv: list[str] | None = None) -> int:
                 file=sys.stderr,
             )
 
-    if getattr(args, "agent", "codex") == "claude-code":
+    if config.agent == "claude-code":
         from agentkaizen.claude_code_session import sync_claude_sessions
 
+        # Forward W&B settings from merged config into args so sync_claude_sessions
+        # sees entity/project even when set only in pyproject.toml or env vars.
+        if not getattr(args, "entity", None):
+            args.entity = config.entity
+        if not getattr(args, "project", None):
+            args.project = config.project
         return sync_claude_sessions(args)
 
     configure_weave_pii_redaction(enabled=not args.no_redaction)

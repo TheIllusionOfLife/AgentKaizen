@@ -225,6 +225,28 @@ def test_claude_code_runner_run_raises_agent_run_error_on_timeout(monkeypatch):
         runner.run("prompt", timeout_seconds=1)
 
 
+def test_claude_code_runner_strips_claudecode_env(monkeypatch):
+    """CLAUDECODE env var must be removed so nested claude -p calls don't hang."""
+    captured: dict = {}
+
+    def fake_run(cmd, capture_output, text, timeout, cwd, env=None):
+        captured["env"] = env
+        return SimpleNamespace(
+            returncode=0,
+            stdout=_make_claude_stdout("ok"),
+            stderr="",
+        )
+
+    monkeypatch.setenv("CLAUDECODE", "1")
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    runner = ClaudeCodeRunner()
+    runner.run("prompt")
+
+    assert captured.get("env") is not None
+    assert "CLAUDECODE" not in captured["env"]
+
+
 # ---------------------------------------------------------------------------
 # Registry
 # ---------------------------------------------------------------------------

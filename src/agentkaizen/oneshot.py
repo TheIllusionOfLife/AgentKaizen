@@ -166,14 +166,17 @@ def main(argv: list[str] | None = None) -> int:
     if tracing_enabled:
         weave_init(project_path)
 
-    runner = get_runner(
-        config.agent,
-        model=config.model,
-        sandbox=args.sandbox,
-        profile=args.profile,
-        image_paths=args.image,
-        extra_args=args.codex_arg,
-    )
+    runner_kwargs: dict = {"model": config.model}
+    if config.agent == "codex":
+        runner_kwargs.update(
+            {
+                "sandbox": args.sandbox,
+                "profile": args.profile,
+                "image_paths": args.image,
+                "extra_args": args.codex_arg,
+            }
+        )
+    runner = get_runner(config.agent, **runner_kwargs)
 
     @weave_op(name="run_codex_exec_traced")  # freeze op name across refactor
     def run_codex_exec_traced() -> dict:

@@ -665,7 +665,10 @@ def _build_parser() -> argparse.ArgumentParser:
         "--agent",
         default=None,
         choices=["codex", "claude-code"],
-        help="Agent type hint (auto-detected from trace source field if omitted)",
+        help=(
+            "Agent type hint; currently informational — format is auto-detected "
+            "from the trace 'source' field. Accepted for forward compatibility."
+        ),
     )
     return parser
 

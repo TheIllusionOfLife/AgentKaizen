@@ -56,7 +56,15 @@ def discover_claude_sessions(
         return []
 
     resolved_root = session_root.resolve()
-    search_root = resolved_root / project_slug if project_slug else resolved_root
+    if project_slug:
+        search_root = (resolved_root / project_slug).resolve()
+        # Reject traversal attempts (e.g. slug="../../etc").
+        try:
+            search_root.relative_to(resolved_root)
+        except ValueError:
+            return []
+    else:
+        search_root = resolved_root
 
     sessions: list[dict[str, Any]] = []
     for candidate in sorted(search_root.rglob("*.jsonl")):
@@ -90,20 +98,47 @@ def discover_claude_sessions(
 
 
 def _read_session_metadata(path: pathlib.Path) -> dict[str, Any]:
-    """Extract lightweight metadata from the first and last records of a session file."""
+    """Extract lightweight metadata from the first and last records of a session file.
+
+    Reads only the first 20 lines and a tail chunk (~4 KB) to avoid loading large
+    session files into memory.
+    """
     meta: dict[str, Any] = {}
-    lines: list[str] = []
+    first_lines: list[str] = []
+    last_lines: list[str] = []
+
     try:
-        with path.open(encoding="utf-8", errors="replace") as fh:
-            for line in fh:
-                stripped = line.strip()
-                if stripped:
-                    lines.append(stripped)
+        file_size = path.stat().st_size
     except OSError:
         return meta
 
-    # Read first useful record for session metadata.
-    for raw in lines[:20]:
+    try:
+        with path.open(encoding="utf-8", errors="replace") as fh:
+            # Read first 20 lines for session metadata.
+            for i, line in enumerate(fh):
+                if i >= 20:
+                    break
+                stripped = line.strip()
+                if stripped:
+                    first_lines.append(stripped)
+
+            # Seek near the end for the last record's timestamp.
+            tail_offset = max(0, file_size - 4096)
+            if tail_offset > 0:
+                try:
+                    fh.seek(tail_offset)
+                    tail = fh.read()
+                    for line in tail.splitlines():
+                        stripped = line.strip()
+                        if stripped:
+                            last_lines.append(stripped)
+                except OSError:
+                    pass
+    except OSError:
+        return meta
+
+    # Extract metadata from the first useful record.
+    for raw in first_lines:
         try:
             record = json.loads(raw)
         except json.JSONDecodeError:
@@ -130,8 +165,8 @@ def _read_session_metadata(path: pathlib.Path) -> dict[str, Any]:
     except OSError:
         pass
 
-    # Try to find timestamp of the last record.
-    for raw in reversed(lines[-10:]):
+    # Try to find timestamp of the last record from the tail.
+    for raw in reversed(last_lines[-10:]):
         try:
             record = json.loads(raw)
         except json.JSONDecodeError:
@@ -230,12 +265,17 @@ def build_claude_code_trace(
                 # Accumulate token usage.
                 usage = record.get("message", {}).get("usage") or {}
                 if isinstance(usage, dict):
-                    total_input_tokens += int(usage.get("input_tokens") or 0)
-                    total_output_tokens += int(usage.get("output_tokens") or 0)
-                    total_cache_creation += int(
-                        usage.get("cache_creation_input_tokens") or 0
-                    )
-                    total_cache_read += int(usage.get("cache_read_input_tokens") or 0)
+                    try:
+                        total_input_tokens += int(usage.get("input_tokens") or 0)
+                        total_output_tokens += int(usage.get("output_tokens") or 0)
+                        total_cache_creation += int(
+                            usage.get("cache_creation_input_tokens") or 0
+                        )
+                        total_cache_read += int(
+                            usage.get("cache_read_input_tokens") or 0
+                        )
+                    except (TypeError, ValueError):
+                        malformed_lines += 1
 
     # Determine completion status.
     if last_assistant_stop_reason == "end_turn":
@@ -465,6 +505,9 @@ def _process_assistant_record(
 
 
 def _empty_trace(session_path: pathlib.Path, redaction_enabled: bool) -> dict[str, Any]:
+    safe_path = (
+        _sanitize_path(str(session_path)) if redaction_enabled else str(session_path)
+    )
     return {
         "source": "claude_code_interactive",
         "session_id": session_path.stem,
@@ -476,7 +519,7 @@ def _empty_trace(session_path: pathlib.Path, redaction_enabled: bool) -> dict[st
         "started_at": "",
         "completed_at": "",
         "status": "parse_error",
-        "status_reason": "no_signal",
+        "status_reason": "file_open_error",
         "messages": [],
         "tool_calls": [],
         "token_usage": {
@@ -493,7 +536,7 @@ def _empty_trace(session_path: pathlib.Path, redaction_enabled: bool) -> dict[st
         "ingest_metadata": {
             "parser_version": PARSER_VERSION,
             "redaction_enabled": redaction_enabled,
-            "session_file": str(session_path),
+            "session_file": safe_path,
             "malformed_lines": 0,
             "user_task_source": "none",
         },
@@ -558,9 +601,7 @@ def sync_claude_sessions(args: Any) -> int:
                 redactor=redactor,
                 redaction_enabled=redaction_enabled,
             )
-            import json as _json
-
-            print(_json.dumps(summary, ensure_ascii=True))
+            print(json.dumps(summary, ensure_ascii=True))
             return 0
 
         while True:
@@ -571,9 +612,7 @@ def sync_claude_sessions(args: Any) -> int:
                 redactor=redactor,
                 redaction_enabled=redaction_enabled,
             )
-            import json as _json
-
-            print(_json.dumps(summary, ensure_ascii=True))
+            print(json.dumps(summary, ensure_ascii=True))
             time.sleep(max(1, int(getattr(args, "poll_seconds", DEFAULT_POLL_SECONDS))))
     except KeyboardInterrupt:
         return 0
@@ -650,8 +689,15 @@ def _run_claude_sync_once(
         )
         ingest_claude_code_session(trace)
         _print_session_summary(trace)
-        uploaded += 1
-        new_processed.append(str(session["path"]))
+        trace_status = trace.get("status", "")
+        # Only checkpoint complete sessions — incomplete sessions may still be
+        # in progress and should be retried on the next sync run.
+        if trace_status == "complete":
+            uploaded += 1
+            new_processed.append(str(session["path"]))
+        elif trace_status == "parse_error":
+            # Checkpoint to avoid infinite retries on permanently broken files.
+            new_processed.append(str(session["path"]))
 
     updated_state = dict(state)
     existing = list(state.get("processed_session_ids", []))
@@ -679,5 +725,6 @@ def _print_session_summary(trace: dict[str, Any]) -> None:
     status = str(trace.get("status", ""))
     print(
         f"  session={session_id} status={status} msgs={msgs} tools={tools}"
-        f" tokens={total_tokens} task={user_task!r}"
+        f" tokens={total_tokens} task={user_task!r}",
+        file=sys.stderr,
     )

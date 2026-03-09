@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -30,15 +31,13 @@ class ClaudeCodeRunner:
         workspace: Path | None = None,
         timeout_seconds: int = 300,
     ) -> AgentResult:
-        import os
-
         command = self.build_command(prompt, workspace=workspace)
         cwd = str(workspace) if workspace else None
         # Strip CLAUDECODE so nested claude -p calls are not blocked when running
         # from within an active Claude Code session (official skill-creator pattern).
-        env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
+        env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}  # noqa: S603
         try:
-            proc = subprocess.run(
+            proc = subprocess.run(  # noqa: S603
                 command,
                 capture_output=True,
                 text=True,
