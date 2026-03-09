@@ -1,6 +1,6 @@
 ---
 name: agentkaizen
-description: "Trace, evaluate, and improve CLI-based AI coding agent behavior using AgentKaizen. Use when the user wants to: (1) trace a one-shot agent run with guardrails, (2) sync or score interactive Codex or Claude Code sessions, (3) generate eval cases from recent traces, (4) run offline evals to compare prompt/doc variants, (5) measure which AGENTS.md or instruction changes improve agent behavior. Trigger phrases: trace my run, sync my sessions, run the eval, generate eval cases, compare variants, score my session, evaluate my agent."
+description: "Use agentkaizen to measure and prove whether your AI coding agent actually follows instructions — not just to run it, but to verify it. Use this skill when: you want to trace a Codex or Claude Code run and check rule compliance (did it branch before work? stay within tool limits?); you changed AGENTS.md or config and need before/after evidence of whether it helped; a session used too many tool calls or failed to complete and you want to diagnose why; you need to generate regression eval cases from recorded traces. The trigger: any question about measuring, comparing, or verifying agent behavior — not writing instructions, not general debugging."
 ---
 
 # AgentKaizen
