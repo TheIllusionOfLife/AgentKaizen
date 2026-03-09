@@ -20,6 +20,7 @@
 - `evals.py`: offline variant comparison using temporary workspaces
 - `casegen.py`: draft case generation from recent Weave traces
 - `session_sync.py`: local interactive-session ingestion into Weave traces
+- `claude_code_session.py`: parses Claude Code JSONL sessions (`~/.claude/projects/`): discovery, trace building, sync flow
 - `session_scoring.py`: interactive trace analysis and scoring
 - `scoring.py`: shared deterministic scorer functions
 - `config.py`: load `[tool.agentkaizen]` from pyproject.toml; merge with CLI args
@@ -48,12 +49,14 @@
   - `tests/test_codex_weave.py` — covers `agentkaizen.oneshot` (and `agentkaizen.core`)
   - `tests/test_codex_evals.py` — covers `agentkaizen.evals`
   - `tests/test_codex_casegen.py` — covers `agentkaizen.casegen`
-  - `tests/test_codex_interactive_sync.py` — covers `agentkaizen.session_sync`
-  - `tests/test_codex_interactive_scoring.py` — covers `agentkaizen.session_scoring`
+  - `tests/test_codex_interactive_sync.py` — covers `agentkaizen.session_sync` (shim name; canonical module is `session_sync.py`)
+  - `tests/test_codex_interactive_scoring.py` — covers `agentkaizen.session_scoring` (shim name; canonical module is `session_scoring.py`)
   - `tests/test_codex_scoring.py` — covers `agentkaizen.scoring`
   - `tests/test_cli.py` — covers `agentkaizen.cli`
   - `tests/test_config.py` — covers `agentkaizen.config`
   - `tests/test_runners.py` — covers `agentkaizen.runners`
+  - `tests/test_claude_code_session.py` — covers `agentkaizen.claude_code_session`
+  - `tests/test_claude_code_e2e.py` — live E2E tests for Claude Code session ingestion (skipped in CI)
 - Shared test helpers belong in `tests/conftest.py`
 
 ## Naming and Import Conventions

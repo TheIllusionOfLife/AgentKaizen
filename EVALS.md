@@ -9,6 +9,7 @@ The key idea is simple: steering surfaces such as `AGENTS.md`, `README.md`, skil
 AgentKaizen currently evaluates four related things:
 - one-shot `codex exec` outputs
 - interactive session behavior after ingestion
+- interactive Claude Code session behavior after ingestion
 - candidate document or config variants in offline evals
 - draft regression cases generated from recent traces
 
@@ -85,13 +86,15 @@ This model represents an execution wrapper around a prepared candidate applicati
 This is useful when the unit of interest is one direct execution.
 
 ### 2. Full interactive-session ingestion
-`codex-weave-sync-interactive` reads local Codex session files and reconstructs:
+`agentkaizen session sync` reads local session files and reconstructs:
 - user and assistant messages
 - tool calls
 - token usage
 - completion state
 - derived user task
 - workflow analysis
+
+For Codex sessions, files are read from `~/.codex/sessions/`. For Claude Code, `agentkaizen session sync --agent claude-code` reads `~/.claude/projects/<slug>/<uuid>.jsonl` and produces the same trace schema.
 
 This is useful when the unit of interest is the whole session rather than a single final answer.
 
@@ -213,9 +216,10 @@ To improve evaluation quality over time:
 - continue calibrating task-aware workflow heuristics
 
 ## Related Files
-- `codex_evals.py`
-- `codex_scoring.py`
-- `codex_casegen.py`
-- `codex_interactive_sync.py`
-- `codex_interactive_scoring.py`
+- `src/agentkaizen/evals.py` (legacy shim: `codex_evals.py`)
+- `src/agentkaizen/scoring.py` (legacy shim: `codex_scoring.py`)
+- `src/agentkaizen/casegen.py` (legacy shim: `codex_casegen.py`)
+- `src/agentkaizen/session_sync.py` (legacy shim: `codex_interactive_sync.py`)
+- `src/agentkaizen/session_scoring.py` (legacy shim: `codex_interactive_scoring.py`)
+- `src/agentkaizen/claude_code_session.py`
 - `evals/cases/`
