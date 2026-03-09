@@ -1397,3 +1397,40 @@ def test_build_interactive_analysis_handles_invalid_shell_syntax():
 
     assert analysis["ran_lint"] is False
     assert analysis["ran_format"] is False
+
+
+# ---------------------------------------------------------------------------
+# CLI default routing: --agent claude-code must not bleed Codex paths
+# ---------------------------------------------------------------------------
+
+
+def test_session_sync_build_parser_defaults_to_none_paths():
+    """--session-root and --state-file must default to None so claude-code sync
+    uses its own defaults rather than the Codex-specific paths."""
+    parser = codex_interactive_sync._build_parser()
+    args = parser.parse_args([])
+    assert args.session_root is None
+    assert args.state_file is None
+
+
+def test_session_sync_codex_path_resolved_when_no_agent_flag(monkeypatch, tmp_path):
+    """When --agent is not set, main() applies Codex-specific defaults before use."""
+    # Patch so main() exits before actually running sync
+    calls: list = []
+
+    def fake_run_sync_once(**kwargs):
+        calls.append(kwargs)
+        return {"synced": 0, "skipped": 0, "errors": 0}
+
+    monkeypatch.setattr(codex_interactive_sync, "_run_sync_once", fake_run_sync_once)
+    monkeypatch.setattr(codex_interactive_sync, "ensure_wandb_api_key", lambda: None)
+
+    ret = codex_interactive_sync.main(["--once"])
+
+    assert ret == 0
+    assert calls, "_run_sync_once was not called"
+    # session_root should resolve to the Codex default, NOT a claude path
+    session_root = calls[0]["session_root"]
+    assert (
+        "codex" in str(session_root).lower() or "sessions" in str(session_root).lower()
+    )

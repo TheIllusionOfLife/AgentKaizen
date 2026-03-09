@@ -917,8 +917,8 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--session-root",
-        default=str(DEFAULT_SESSION_ROOT),
-        help="Path to Codex session files root",
+        default=None,
+        help="Path to session files root (default: agent-specific)",
     )
     parser.add_argument(
         "--index-file",
@@ -927,8 +927,8 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--state-file",
-        default=str(DEFAULT_STATE_FILE),
-        help="Path to sync checkpoint state JSON",
+        default=None,
+        help="Path to sync checkpoint state JSON (default: agent-specific)",
     )
     parser.add_argument(
         "--redact-regex",
@@ -1088,6 +1088,13 @@ def main(argv: list[str] | None = None) -> int:
     configure_weave_pii_redaction(enabled=not args.no_redaction)
     if tracing_enabled:
         weave_init(project_path)
+
+    # Apply Codex-specific defaults (not set in argparser to avoid leaking into
+    # claude-code delegation where sync_claude_sessions uses its own defaults).
+    if args.session_root is None:
+        args.session_root = str(DEFAULT_SESSION_ROOT)
+    if args.state_file is None:
+        args.state_file = str(DEFAULT_STATE_FILE)
 
     session_root = pathlib.Path(args.session_root).expanduser().resolve()
     index_file = pathlib.Path(args.index_file).expanduser().resolve()
