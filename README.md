@@ -3,12 +3,12 @@
 Measure and improve how CLI-based AI coding agents behave. Works locally out of the box; optionally integrates with W&B Weave for remote tracing and dashboards.
 
 ## Why This Project Exists
-Users of tools like Codex can steer agent behavior through many different surfaces:
-- global `AGENTS.md`
+Users of tools like Codex or Claude Code can steer agent behavior through many different surfaces:
+- global `AGENTS.md` / `CLAUDE.md`
 - project `AGENTS.md`
 - agent skills
 - `README.md`
-- Codex config and profiles
+- agent config and profiles
 - other repo-specific documents
 
 Those surfaces matter, but it is usually hard to tell which change actually helped. This project exists to connect those steering inputs to measurable outcomes — locally by default, with optional W&B Weave integration for remote tracing and dashboards.
@@ -45,11 +45,6 @@ If you are new to Weave, start here:
 ```bash
 uv sync --group dev-minimal      # minimal install (local-only, no W&B)
 uv sync --group dev              # full dev install (includes weave)
-```
-
-To install the package with W&B Weave support (package consumers, not repo checkout):
-```bash
-pip install agentkaizen[weave]   # or: uv add agentkaizen[weave]
 ```
 
 All workflows work without W&B. When Weave is not installed or `WANDB_API_KEY` is not set, AgentKaizen runs in local-only mode: traces are saved to `~/.agentkaizen/traces.jsonl`, evaluations run locally, and PII redaction uses built-in regex patterns.
@@ -179,7 +174,7 @@ uv run agentkaizen eval \
   --variant-file evals/variants/example_agents_japanese_response.json
 ```
 
-`agentkaizen eval` runs each variant inside a temporary workspace and, unless you already passed it, automatically adds `--skip-git-repo-check` to the Codex invocation.
+`agentkaizen eval` runs each variant inside a temporary workspace and, unless you already passed it, automatically adds `--skip-git-repo-check` to Codex invocations.
 
 ### Recommended First Demo
 If you are trying AgentKaizen for the first time, start with the Japanese-response `AGENTS.md` experiment:
@@ -210,7 +205,7 @@ Practical rule of thumb:
 - Promote a variant when it outranks baseline, still has `gate_pass: True`, and the traced outputs actually look better.
 - Keep the baseline when quality is similar but the candidate regresses latency or token usage enough to fail the gate.
 - Add at least one control case for instruction-steering experiments so you can confirm the change helps without becoming too rigid.
-- Use the default `session score` backend for fast iteration and the `external` backend as a slower second opinion before shipping a change.
+- Use the default `session score` heuristic backend for fast iteration and the `--scoring-backend external` Codex judge as a slower second opinion before shipping a change.
 
 Do not stop at the ranking summary:
 
@@ -243,9 +238,9 @@ This is what makes the repo useful: it turns prompt and documentation tuning int
 #### 1. Two tracking modes
 This project uses Weave tracing in two distinct modes:
 - one-shot tracing for agent runs through `agentkaizen run`
-- full-session ingestion for interactive Codex sessions through `agentkaizen session sync`
+- full-session ingestion for interactive sessions through `agentkaizen session sync` (Codex and Claude Code)
 
-The one-shot mode stores structured prompt content, command, event stream, final message, usage, and guardrail results. The interactive mode reconstructs an entire session from local Codex session files and stores structured message content, tool calls, usage, derived task text, and workflow analysis.
+The one-shot mode stores structured prompt content, command, event stream, final message, usage, and guardrail results. The interactive mode reconstructs an entire session from local session files (Codex: `~/.codex/sessions/`; Claude Code: `~/.claude/projects/`) and stores structured message content, tool calls, usage, derived task text, and workflow analysis.
 
 The important difference is what each mode answers:
 - one-shot and offline eval flows answer: "did variant B beat baseline A on this prompt set?"
@@ -255,7 +250,7 @@ In other words, one-shot/offline eval is for controlled comparison across varian
 
 #### 2. Prompts, datasets, scorers, and models
 Prompts in this repo come from:
-- direct `codex-weave` prompts
+- direct `agentkaizen run` prompts
 - derived user tasks from interactive sessions
 - eval case prompts in `evals/cases/*.jsonl`
 - generated draft cases from past traces
@@ -284,9 +279,9 @@ Models in this repo are application-level model wrappers, not provider SDK wrapp
 This project now preserves multimodal prompt structure for one-shot `codex exec` runs and interactive session ingestion. Flattened text fields are still retained for backwards compatibility, but traces also keep ordered content blocks and a `modalities` summary.
 
 #### 4. App versioning
-This project uses model classes (`weave.Model` when available, `LocalModel` otherwise) in offline evals to represent candidate app behavior. Each variant is effectively a versioned Codex application setup:
+This project uses model classes (`weave.Model` when available, `LocalModel` otherwise) in offline evals to represent candidate app behavior. Each variant is effectively a versioned agent application setup:
 - temporary workspace contents
-- Codex model and profile settings
+- agent model and profile settings
 - candidate document or config edits
 
 This is a lightweight use of app versioning focused on comparison during evals, not a full model-registry workflow.
@@ -308,7 +303,7 @@ When Weave is installed, its built-in ML-based redaction is enabled for one-shot
 ## Architecture
 The core flow is:
 
-1. Run or ingest Codex activity into local traces (and optionally W&B Weave).
+1. Run or ingest agent activity (Codex or Claude Code) into local traces (and optionally W&B Weave).
 2. Score those traces with guardrails or interactive-session heuristics.
 3. Generate reusable cases from real traces.
 4. Compare candidate steering changes, such as `AGENTS.md` edits, against the baseline.
@@ -325,6 +320,7 @@ Key modules (all under `src/agentkaizen/`):
 - [`scoring.py`](./src/agentkaizen/scoring.py) — shared scorer functions
 - [`core.py`](./src/agentkaizen/core.py) — shared infra: JSONL parser, PII redaction, W&B env
 - [`_weave_compat.py`](./src/agentkaizen/_weave_compat.py) — `HAS_WEAVE` flag, `weave_init()`, `weave_op()` shims
+- [`_llm_judge.py`](./src/agentkaizen/_llm_judge.py) — `LLMJudgeScorer`: configurable LLM-as-a-judge scorer for eval cases
 - [`_local_eval.py`](./src/agentkaizen/_local_eval.py) — local evaluation framework (`LocalEvaluation`, `LocalModel`, `LocalScorer`)
 - [`_trace_log.py`](./src/agentkaizen/_trace_log.py) — local JSONL trace persistence and querying
 - [`_pii.py`](./src/agentkaizen/_pii.py) — local regex-based PII redaction

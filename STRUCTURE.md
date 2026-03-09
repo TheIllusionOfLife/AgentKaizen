@@ -26,6 +26,11 @@
 - `session_scoring.py`: interactive trace analysis and scoring
 - `scoring.py`: shared deterministic scorer functions
 - `config.py`: load `[tool.agentkaizen]` from pyproject.toml; merge with CLI args
+- `_llm_judge.py`: `LLMJudgeScorer` — configurable LLM-as-a-judge scorer for eval cases
+- `_weave_compat.py`: `HAS_WEAVE` flag, `weave_init()`, `weave_op()` shims for optional Weave
+- `_local_eval.py`: local evaluation framework (`LocalEvaluation`, `LocalModel`, `LocalScorer`)
+- `_trace_log.py`: local JSONL trace persistence and querying (`~/.agentkaizen/traces.jsonl`)
+- `_pii.py`: local regex-based PII redaction (fallback when Weave is absent)
 - `runners/`: `AgentRunner` protocol + `CodexRunner`, `ClaudeCodeRunner`, registry
 
 ## Docs Layout
@@ -59,6 +64,13 @@
   - `tests/test_runners.py` — covers `agentkaizen.runners`
   - `tests/test_claude_code_session.py` — covers `agentkaizen.claude_code_session`
   - `tests/test_claude_code_e2e.py` — live E2E tests for Claude Code session ingestion (skipped in CI)
+  - `tests/test_llm_judge.py` — covers `agentkaizen._llm_judge`
+  - `tests/test_local_eval.py` — covers `agentkaizen._local_eval`
+  - `tests/test_pii.py` — covers `agentkaizen._pii`
+  - `tests/test_trace_log.py` — covers `agentkaizen._trace_log`
+  - `tests/test_weave_compat.py` — covers `agentkaizen._weave_compat`
+  - `tests/test_shims.py` — smoke tests for legacy entry-point shims
+  - `tests/test_compare.py` — covers variant comparison and ranking helpers
 - Shared test helpers belong in `tests/conftest.py`
 
 ## Naming and Import Conventions

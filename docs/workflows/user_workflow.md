@@ -1,4 +1,4 @@
-# User Workflow: Improving Codex Behavior
+# User Workflow: Improving Agent Behavior
 
 This is a project-owned workflow guide for running the AgentKaizen loop. All workflows work locally without W&B. For W&B Weave integration (remote tracing and dashboards), set `WANDB_API_KEY`, `WANDB_ENTITY`, and `WANDB_PROJECT` in `.env.local` or your shell, as described in the repository [README.md](../../README.md).
 
