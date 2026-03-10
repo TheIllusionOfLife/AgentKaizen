@@ -22,8 +22,11 @@ Users come here to:
 ## Core Features
 - Traced one-shot agent runs with guardrail scoring (Codex and Claude Code)
 - Interactive session ingestion and scoring (Codex and Claude Code)
+- Evidence-Based Claims: structured pass/fail claims from session scoring, grounded in trace evidence
 - LLM-as-a-judge semantic scoring for eval cases
 - Offline evals for document, skill, and config variants
+- Multi-run dispersion-aware benchmarks (`--runs N`): mean ± stddev with conservative gating
+- Blind A/B comparator (`--compare`): position-bias-free qualitative comparison, report-only
 - Draft case generation from recent traces
 - Ranking that considers quality, latency, and token usage
 - Agent Skill packaging for direct invocation from within Codex or Claude Code sessions

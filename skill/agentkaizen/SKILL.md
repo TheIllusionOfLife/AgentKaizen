@@ -1,6 +1,6 @@
 ---
 name: agentkaizen
-description: "Use agentkaizen to measure and prove whether your AI coding agent actually follows instructions — not just to run it, but to verify it. Use this skill when: you want to trace a Codex or Claude Code run and check rule compliance (did it branch before work? stay within tool limits?); you changed AGENTS.md or config and need before/after evidence of whether it helped; a session used too many tool calls or failed to complete and you want to diagnose why; you need to generate regression eval cases from recorded traces. The trigger: any question about measuring, comparing, or verifying agent behavior — not writing instructions, not general debugging."
+description: "Use agentkaizen to measure and prove whether your AI coding agent actually follows instructions — not just to run it, but to verify it. Use this skill when: you want to trace a Codex or Claude Code run and check rule compliance (did it branch before work? stay within tool limits?); you changed AGENTS.md or config and need before/after evidence of whether it helped; a session used too many tool calls or failed to complete and you want to diagnose why; you need to generate regression eval cases from recorded traces; you want a qualitative blind comparison of two agent outputs without metric bias. The trigger: any question about measuring, comparing, or verifying agent behavior — not writing instructions, not general debugging."
 ---
 
 # AgentKaizen
@@ -46,11 +46,14 @@ uv run agentkaizen session sync --once
 # Sync Claude Code sessions (~/.claude/projects/)
 uv run agentkaizen session sync --agent claude-code --once
 
-# Score a trace file
-uv run agentkaizen session score --trace-file ~/.agentkaizen/traces.jsonl
+# Score a trace file (default heuristic backend)
+uv run agentkaizen session score --trace-file path/to/trace.json
+
+# Score with external Codex judge (slower, grounded claims)
+uv run agentkaizen session score --scoring-backend external --trace-file path/to/trace.json
 ```
 
-`score` outputs a human-readable analysis: task, outcome, friction, workflow compliance, and recommendations.
+`score` outputs: task, outcome, friction signals, workflow gaps, metrics, and an **Evidence-Based Claims** section — structured pass/fail assertions about agent behavior grouped by type (process, behavioral, efficiency). The default heuristic backend synthesizes claims from signal detection instantly; `--scoring-backend external` grounds claims in specific turn evidence from the trace.
 
 ### 3. Generate Eval Cases
 
@@ -62,13 +65,38 @@ Review and curate the output. Each case: `prompt`, optional `expected_output`, `
 
 ### 4. Run Evals & Compare Variants
 
+**Basic comparison:**
+
 ```bash
 uv run agentkaizen eval \
   --cases evals/cases \
   --variant-file evals/variants/example.json
 ```
 
-Ranks variants by score, latency, and token usage. Promote only variants that improve without regressions.
+**Multi-run for dispersion-aware gating** (recommended before promoting):
+
+```bash
+uv run agentkaizen eval \
+  --runs 3 \
+  --cases evals/cases/core.jsonl \
+  --variant-file evals/variants/example.json
+```
+
+Reports `quality_score: 0.850 ± 0.032 (n=3)`. Gating uses `mean - stddev` (conservative) to avoid promoting based on a lucky run. Zero stddev on a failing scorer means the problem is systematic, not noise.
+
+**Blind A/B comparison** (qualitative, report-only):
+
+```bash
+uv run agentkaizen eval \
+  --compare \
+  --show-outputs \
+  --cases evals/cases \
+  --variant-file evals/variants/example.json
+```
+
+An LLM judge evaluates each baseline/candidate output pair without knowing which is which (random shuffle eliminates position bias). Per-case verdict: winner, rubric scores (instruction adherence, completeness, efficiency, correctness 1-5), reasoning, strengths, weaknesses. Use `--compare-rubric "..."` for custom criteria. Does **not** affect `gate_pass`.
+
+**After every eval**, the output automatically includes an **Interpretation** block and prioritized **Suggested Next Actions** — no delta means the wrong steering surface was edited; failing `contains_pass` with `stddev=0` is deterministic not noise; etc.
 
 Useful flags: `--show-outputs`, `--judge-rubric "..."`, `--edit` (inline variant), `--allow-unsafe-scorer-file`.
 
@@ -89,6 +117,9 @@ project = "my-project"
 ## Key Notes
 
 - **W&B Weave is optional** — all workflows run locally without it.
+- **`--runs N` forces local eval path** — Weave is bypassed; a notice is printed.
+- **`--compare` is report-only** — comparator verdicts inform the user but never change `gate_pass`.
 - **LLM-as-a-judge** — add `--judge-rubric "..."` to `eval` for semantic scoring, or set per-case in JSONL.
 - **Guardrail modes** — `warn` (default, exit 0) vs `fail` (exit 3 on violation).
 - **Nested runs** — `agentkaizen run --agent claude-code` works from within an active Claude Code session (CLAUDECODE env var is stripped automatically).
+- **Interpretation is automatic** — after every eval, a human-readable analysis and next-action list are printed below the ranking table.

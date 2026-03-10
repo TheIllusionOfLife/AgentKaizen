@@ -26,6 +26,8 @@ uv run agentkaizen --help
 uv run agentkaizen run --prompt "Say only: ok"
 uv run agentkaizen run --agent claude-code --prompt "Say only: ok"
 uv run agentkaizen eval --cases evals/cases --variant-file evals/variants/example.json
+uv run agentkaizen eval --runs 3 --cases evals/cases --variant-file evals/variants/example.json  # multi-run with dispersion
+uv run agentkaizen eval --compare --cases evals/cases --variant-file evals/variants/example.json  # blind A/B comparison
 uv run agentkaizen eval casegen --limit 20 --output evals/cases.generated.jsonl
 uv run agentkaizen session sync --once                       # Codex sessions
 uv run agentkaizen session sync --agent claude-code --once   # Claude Code sessions
@@ -58,12 +60,13 @@ CI runs `pytest`, `ruff check .`, and `ruff format --check .` via `uv run --grou
 | `casegen.py` | Generate draft eval cases from recent traces (local or Weave) |
 | `session_sync.py` | Ingest local Codex sessions into traces; delegates to `claude_code_session` for `--agent claude-code` |
 | `claude_code_session.py` | Parse Claude Code JSONL sessions (`~/.claude/projects/`): discovery, trace building, sync flow |
-| `session_scoring.py` | Score interactive session traces (heuristics + optional external judge) |
+| `session_scoring.py` | Score interactive session traces (heuristics + optional external judge); evidence-based claim extraction |
 | `scoring.py` | Deterministic scorer functions (substring, length, JSON, schema, sections) |
 | `cli.py` | Unified `agentkaizen` entry point with subcommand dispatch |
 | `config.py` | Load `[tool.agentkaizen]` from pyproject.toml; merge with CLI args |
 | `_weave_compat.py` | `HAS_WEAVE` flag, `weave_init()`, `weave_op()` shims for optional Weave |
-| `_local_eval.py` | Local evaluation framework: `LocalEvaluation`, `LocalModel`, `LocalScorer` |
+| `_local_eval.py` | Local evaluation framework: `LocalEvaluation`, `LocalModel`, `LocalScorer`; `evaluate_n()` for multi-run |
+| `_comparator.py` | Blind A/B comparator: `ComparatorScorer`, `ComparatorResult`, position-bias-free comparison |
 | `_trace_log.py` | Local JSONL trace persistence and querying (`~/.agentkaizen/traces.jsonl`) |
 | `_pii.py` | Local regex-based PII redaction (fallback when Weave is absent) |
 | `runners/` | `AgentRunner` protocol + `CodexRunner`, `ClaudeCodeRunner`, registry |
@@ -106,6 +109,10 @@ codex exec / interactive sessions / claude -p
 - `ClaudeCodeRunner.run()` strips `CLAUDECODE` from the subprocess env so that `claude -p` works from within an active Claude Code session (official skill-creator pattern). This enables nested eval/judge runs without hanging.
 - `claude_code_session.py` parses `~/.claude/projects/<slug>/<uuid>.jsonl`. Skip `progress`, `system`, `file-history-snapshot`, `queue-operation` records (high-volume noise). Completion detection uses `stop_reason == "end_turn"` → "complete/end_turn"; `last-prompt` record → "complete/last_prompt"; otherwise "incomplete/no_signal".
 - PII redactors (presidio) can misidentify short tokens like `"end_turn"` as PERSON entities. Structural/enum fields (`status`, `status_reason`, `source`) are restored after `apply_builtin_pii_redaction` to prevent corruption.
+- `--runs N` and `--compare` force local eval mode (log a notice if Weave is configured). Multi-run uses `evaluate_n()` → `_aggregate_cross_run()` for dispersion stats; ranking uses `rank_variant_results_aggregated()` with conservative gating (mean - stddev).
+- `--compare` is report-only in v1 — it informs users but does not affect `gate_pass`. Only baseline-vs-each-candidate comparisons are run (not all-pairs).
+- Session scoring with `--scoring-backend external` now returns evidence-based claims alongside existing numeric scores. Claims require messages/tool_calls in the trace; traces without them gracefully omit claims.
+- Heuristic scoring path synthesizes pseudo-claims from signal detection (`_synthesize_pseudo_claims()`) for consistent output shape.
 
 ## Conventions
 

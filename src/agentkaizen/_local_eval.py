@@ -7,8 +7,10 @@ in the exact same schema as Weave's evaluation framework.
 
 from __future__ import annotations
 
+import copy
 import inspect
 import json
+import math
 from time import perf_counter
 from typing import Any
 
@@ -76,6 +78,7 @@ class LocalEvaluation:
         self.dataset = dataset
         self.scorers = scorers
         self.per_case_results: list[dict[str, Any]] = []
+        self.per_run_results: list[list[dict[str, Any]]] = []
 
     def evaluate(self, model: Any) -> dict[str, Any]:
         """Run evaluation synchronously and return aggregated summary."""
@@ -113,6 +116,22 @@ class LocalEvaluation:
             )
 
         return _aggregate(raw, self.scorers)
+
+    def evaluate_n(self, model: Any, *, n: int = 3) -> dict[str, Any]:
+        """Run evaluation N times and return cross-run aggregated summary."""
+        run_summaries: list[dict[str, Any]] = []
+        self.per_run_results = []
+
+        for _ in range(n):
+            summary = self.evaluate(model)
+            run_summaries.append(summary)
+            self.per_run_results.append(copy.deepcopy(self.per_case_results))
+
+        # Set per_case_results to the last run's results
+        if self.per_run_results:
+            self.per_case_results = self.per_run_results[-1]
+
+        return _aggregate_cross_run(run_summaries, n)
 
 
 def _scorer_name(scorer: Any) -> str:
@@ -175,9 +194,13 @@ def _aggregate(
     # Aggregate model_latency
     latencies = [r["_latency"] for r in per_case_results if "_latency" in r]
     if latencies:
+        mean = sum(latencies) / len(latencies)
         summary["model_latency"] = {
-            "mean": sum(latencies) / len(latencies),
+            "mean": mean,
             "count": len(latencies),
+            "stddev": _population_stddev(latencies, mean),
+            "min": min(latencies),
+            "max": max(latencies),
         }
 
     # Aggregate each scorer
@@ -215,12 +238,99 @@ def _aggregate(
             elif all(
                 isinstance(v, (int, float)) and not isinstance(v, bool) for v in values
             ):
+                mean = sum(values) / len(values)
                 field_summary[field] = {
-                    "mean": sum(values) / len(values),
+                    "mean": mean,
                     "count": len(values),
+                    "stddev": _population_stddev(values, mean),
+                    "min": min(values),
+                    "max": max(values),
                 }
             # Skip str, list, None — not aggregated
 
         summary[name] = field_summary
 
     return summary
+
+
+def _population_stddev(values: list[float | int], mean: float) -> float:
+    """Population standard deviation."""
+    if len(values) < 2:
+        return 0.0
+    variance = sum((v - mean) ** 2 for v in values) / len(values)
+    return math.sqrt(variance)
+
+
+def _aggregate_cross_run(
+    run_summaries: list[dict[str, Any]], n_runs: int
+) -> dict[str, Any]:
+    """Merge N per-run summaries into a single cross-run summary with dispersion stats."""
+    if not run_summaries:
+        return {}
+    if len(run_summaries) == 1:
+        return run_summaries[0]
+
+    merged: dict[str, Any] = {}
+    all_keys: set[str] = set()
+    for s in run_summaries:
+        all_keys.update(s.keys())
+
+    for key in all_keys:
+        scorer_dicts = [s.get(key, {}) for s in run_summaries if key in s]
+        if not scorer_dicts or not all(isinstance(d, dict) for d in scorer_dicts):
+            continue
+
+        # Collect all field names across runs
+        all_fields: set[str] = set()
+        for d in scorer_dicts:
+            all_fields.update(d.keys())
+
+        merged_fields: dict[str, Any] = {}
+        for field in all_fields:
+            field_dicts = [d.get(field, {}) for d in scorer_dicts if field in d]
+            if not field_dicts or not all(isinstance(f, dict) for f in field_dicts):
+                continue
+
+            # Detect field type by checking for true_fraction (bool agg) vs mean (numeric agg)
+            if "true_fraction" in field_dicts[0]:
+                fractions = [
+                    f["true_fraction"] for f in field_dicts if "true_fraction" in f
+                ]
+                if not fractions:
+                    continue
+                mean_frac = sum(fractions) / len(fractions)
+                # Preserve original count from individual runs
+                counts = [f.get("count", 0) for f in field_dicts]
+                avg_count = sum(counts) / len(counts) if counts else 0
+                true_counts = [f.get("true_count", 0) for f in field_dicts]
+                false_counts = [f.get("false_count", 0) for f in field_dicts]
+                merged_fields[field] = {
+                    "true_fraction": mean_frac,
+                    "stddev": _population_stddev(fractions, mean_frac),
+                    "min": min(fractions),
+                    "max": max(fractions),
+                    "n_runs": n_runs,
+                    "count": round(avg_count),
+                    # true_count/false_count are per-run averages, not totals
+                    "true_count": round(sum(true_counts) / len(true_counts)),
+                    "false_count": round(sum(false_counts) / len(false_counts)),
+                }
+            elif "mean" in field_dicts[0]:
+                means = [f["mean"] for f in field_dicts if "mean" in f]
+                if not means:
+                    continue
+                overall_mean = sum(means) / len(means)
+                counts = [f.get("count", 0) for f in field_dicts]
+                avg_count = sum(counts) / len(counts) if counts else 0
+                merged_fields[field] = {
+                    "mean": overall_mean,
+                    "stddev": _population_stddev(means, overall_mean),
+                    "min": min(means),
+                    "max": max(means),
+                    "n_runs": n_runs,
+                    "count": round(avg_count),
+                }
+
+        merged[key] = merged_fields
+
+    return merged

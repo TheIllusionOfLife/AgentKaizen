@@ -20,5 +20,8 @@ htmlcov/
 # Generated eval outputs
 evals/cases.generated.jsonl
 
+# Skill runtime artifacts
+skill/agentkaizen-workspace/
+
 # OS/editor noise
 .DS_Store
