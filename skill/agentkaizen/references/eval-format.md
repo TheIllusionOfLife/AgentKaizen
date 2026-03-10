@@ -80,22 +80,44 @@ agentkaizen session sync
   --no-redaction         Disable PII redaction (not recommended)
 
 agentkaizen session score
-  --trace-file PATH      Required: path to trace JSONL
+  --trace-file PATH      Required: path to trace JSON
+  --scoring-backend {subagent,external}
+                         subagent: fast heuristic + pseudo-claims (default)
+                         external: Codex judge with evidence-grounded claims
+  --json                 Emit raw JSON instead of human-readable summary
 
 agentkaizen eval
   --cases PATH           Dir or file of case JSONL
   --variant-file PATH    Variant definitions JSON
-  --show-outputs         Print full agent outputs
+  --runs INT             Evaluate each variant N times; report mean ± stddev (default 1)
+  --compare              Run blind A/B LLM judge per case (report-only, no gate effect)
+  --compare-rubric TEXT  Custom rubric appended to default comparator dimensions
+  --show-outputs         Print full agent outputs per case
   --judge-rubric TEXT    Global LLM-as-a-judge rubric
   --allow-unsafe-scorer-file PATH
   --edit FIELD=VALUE     Inline variant override (repeatable)
   --prompt TEXT          Inline single-case run
+  --quality-similar-threshold FLOAT   (default 0.02)
+  --latency-regression-threshold FLOAT  (default 0.20)
+  --token-regression-threshold FLOAT  (default 0.20)
 
 agentkaizen eval casegen
   --limit INT            Max cases to generate (default 20)
   --output PATH          Output JSONL file
   --from-weave           Pull traces from W&B Weave instead of local
 ```
+
+## Eval Output Sections
+
+Every `agentkaizen eval` run prints three sections in order:
+
+1. **Ranking Summary** — per-variant metrics table with quality score, delta, scorer pass rates (with `± stddev (n=N)` when `--runs > 1`), latency, tokens, gate_pass.
+
+2. **Interpretation** — human-readable verdict per variant: no change / clear winner / quality+efficiency conflict / regression. Flags persistent scorer failures with variance analysis (systematic vs noisy).
+
+3. **Suggested Next Actions** — prioritized list: `--show-outputs` when content is missing, steering surface check, `--compare` for qualitative tiebreaker, promote/discard decision.
+
+When `--compare` is set, a fourth section follows: per-case comparator verdicts with winner, rubric scores, reasoning, and win/loss/tie summary.
 
 ## Trace File Location
 
