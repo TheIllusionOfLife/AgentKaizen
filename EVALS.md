@@ -115,6 +115,30 @@ The flow is:
 
 This makes document and config tuning measurable and comparable.
 
+### Multi-Run Benchmarks (`--runs N`)
+By default, each variant is evaluated once. Use `--runs N` to run each variant N times and aggregate results:
+
+```bash
+uv run agentkaizen eval --runs 3 --cases evals/cases/core.jsonl --variant-file evals/variants/...
+```
+
+Each metric reports `mean ± stddev (n=N)`. Gating uses **conservative estimates**: `mean - stddev` for quality comparison and `mean + stddev` for regression detection. This reduces the chance of promoting a variant that won by a lucky single run.
+
+When `--runs > 1`, the eval always uses the local path (Weave is bypassed). Single-run output is backward-compatible: `--runs 1` produces identical structure with no dispersion fields.
+
+### Blind A/B Comparator (`--compare`)
+Use `--compare` to run an LLM judge side-by-side on baseline and candidate outputs for each case, without the judge knowing which is which (position-bias elimination via random shuffle):
+
+```bash
+uv run agentkaizen eval --compare --show-outputs --cases evals/cases/... --variant-file evals/variants/...
+```
+
+Per-case output includes: winner, rubric scores (instruction adherence, completeness, efficiency, correctness on 1-5 scale), the judge's reasoning, winner strengths, and loser weaknesses.
+
+**Comparator is report-only in v1** — it does not affect `gate_pass`. It is most useful when metric scores are similar and you need a qualitative tiebreaker.
+
+Use `--compare-rubric "..."` to add custom evaluation criteria on top of the four default dimensions.
+
 For language and style experiments such as "respond in Japanese" or "be more concise", prefer:
 - `min_chars` when you need to prevent underspecified replies
 - `max_chars` when brevity matters
@@ -163,11 +187,26 @@ It also derives structured labels such as:
 
 The scorer now distinguishes suspicious signals from definite workflow failures so high exploration cost does not automatically imply a workflow violation.
 
+### Evidence-Based Claims
+Both scoring paths now produce structured **Evidence-Based Claims** alongside the numeric scores. Claims are grouped by type:
+
+- **process** — workflow steps: branch creation, test execution, linting
+- **behavioral** — rule adherence: user corrections, unnecessary clarification questions
+- **efficiency** — unnecessary actions, high tool call count
+
+Each claim has: `type`, `claim` (human-readable assertion), `evidence` (grounding reference), `pass` (True/False), `severity` (high/medium/low for failures).
+
+The **default heuristic path** synthesizes pseudo-claims from the signal detection results (e.g. `branch_created=True` → "Agent created feature branch before changes [✓]"`). These appear automatically with no extra configuration.
+
+The **external judge path** grounds claims in specific evidence slices — turn-numbered summaries of up to 20 key messages and tool calls extracted from the trace — so claims can reference "Turn 3: git checkout -b feat/..." rather than just heuristic signals.
+
+Claims are additive: existing friction signal and workflow gap lines are preserved unchanged.
+
 ### Optional external Codex judge (session scoring)
 When `--scoring-backend external` is used for interactive session scoring, the project runs another `codex exec` call as a structured judge.
 
 That judge:
-- receives a prompt containing the derived `user_task` and `analysis_summary`
+- receives a prompt containing the derived `user_task`, `analysis_summary`, and up to 20 structured evidence slices (turn summaries of messages and tool calls)
 - is told to treat the payload as untrusted data
 - must return strict JSON with:
   - `task_success`
@@ -176,6 +215,7 @@ That judge:
   - `efficiency`
   - `optimization_relevance`
   - `reasoning`
+  - `claims` (array of evidence-grounded claim objects)
 
 The allowed `optimization_relevance` values are:
 - `agents`
@@ -220,6 +260,8 @@ To improve evaluation quality over time:
 - `src/agentkaizen/evals.py` (legacy shim: `codex_evals.py`)
 - `src/agentkaizen/scoring.py` (legacy shim: `codex_scoring.py`)
 - `src/agentkaizen/_llm_judge.py` — `LLMJudgeScorer` for eval case semantic scoring
+- `src/agentkaizen/_local_eval.py` — `LocalEvaluation`, `evaluate_n()` for multi-run dispersion stats
+- `src/agentkaizen/_comparator.py` — `ComparatorScorer` for blind A/B comparison
 - `src/agentkaizen/casegen.py` (legacy shim: `codex_casegen.py`)
 - `src/agentkaizen/session_sync.py` (legacy shim: `codex_interactive_sync.py`)
 - `src/agentkaizen/session_scoring.py` (legacy shim: `codex_interactive_scoring.py`)

@@ -29,6 +29,8 @@ Useful optional Weave and W&B environment variables:
 - `weave.Evaluation()` is used for offline comparison of variants
 - Temporary workspaces isolate candidate doc and config edits during evals
 - Shared scorer functions in `scoring.py` centralize output checks and reduce drift
+- `_local_eval.py` provides `evaluate_n()` for multi-run aggregation with cross-run dispersion stats
+- `_comparator.py` provides `ComparatorScorer` for blind A/B evaluation with position-bias elimination
 - `[tool.agentkaizen]` in pyproject.toml provides config defaults; CLI flags always win
 
 ## How Weave Is Used Here
