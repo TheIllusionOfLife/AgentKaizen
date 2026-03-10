@@ -68,7 +68,7 @@ echo $CLAUDECODE
 - Ties: `code_change` wins over `docs_only` wins over `review` wins over `exploration`
 - Default if no match: `"unknown"`
 
-**Workflow signals** — scan all assistant content (only meaningful for `code_change` tasks; mark `"n/a"` for others):
+**Workflow signals** — scan all assistant content (only meaningful for `code_change` tasks; mark `"n/a"` for others). Check in priority order: (1) `tool_use` block `input` fields (command strings), (2) tool result text, (3) assistant prose as fallback:
 - `branch_created`: look for "git checkout -b" or "git switch -c"
 - `used_uv`: look for "uv run" or "uv sync"
 - `ran_tests`: look for "pytest", "test passed", "tests pass"
@@ -153,8 +153,8 @@ codex exec --json --skip-git-repo-check "<task prompt>"
 ```
 
 Parse JSONL stdout line by line:
-- Find `item.type == "agent_message"` in `item.completed` for final response text
-- Find event with `type == "task_complete"` to confirm finish
+- Find event with `type == "item.completed"` where `item.type == "agent_message"` — extract response text from `item.content`
+- Find event with `type == "turn.completed"` to confirm finish
 
 After capturing output, apply Section 2 heuristics and produce the score schema.
 

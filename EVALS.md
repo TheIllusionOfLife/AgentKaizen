@@ -151,7 +151,7 @@ For language and style experiments such as "respond in Japanese" or "be more con
 
 ## Interactive Scoring
 
-> **Skill users**: Run `/optimize-coding-agent score my last session` in your agent session to score interactively without CLI setup. The heuristics below describe exactly what the skill's native scoring computes.
+> **Skill users**: Run `/optimize-coding-agent score my last session` in your agent session to score interactively without CLI setup. The heuristics below describe the same signal categories the skill uses; `SKILL.md` Section 2 is the definitive spec for the zero-install scoring path.
 
 Interactive scoring has two layers.
 
