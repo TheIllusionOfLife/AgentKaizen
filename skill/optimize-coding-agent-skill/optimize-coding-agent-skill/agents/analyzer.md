@@ -20,7 +20,7 @@ Both options produce the same downstream analysis. Mixed directories (some score
 
 ## Analysis Process
 
-1. Read all `.json` files in `sessions_dir`, sorted lexicographically by filename (deterministic ordering)
+1. Read all `.json` and `.jsonl` files in `sessions_dir`, sorted lexicographically by filename (deterministic ordering). For each file, detect type: if it contains score schema fields (`task_type`, `workflow_signal_breakdown`), use directly; if it contains raw session records (`type`, `message`/`payload`), apply SKILL.md Section 2 scoring heuristics to produce the standard schema first. No prior conversion required for `.jsonl` files.
 2. For each file, extract:
    - `workflow_failures` (list[str])
    - `friction_signals` (list[str])
