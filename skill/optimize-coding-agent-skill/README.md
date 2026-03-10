@@ -78,14 +78,14 @@ These templates work without the CLI — just point your agent at the file.
 
 | Template | When to use |
 |----------|-------------|
-| [`agents/grader.md`](./agents/grader.md) | Grade a session against behavioral assertions (branching, test runs, tool limits). Input: score JSON from `session score --json`. Writes `grading.json`. |
-| [`agents/comparator.md`](./agents/comparator.md) | Blind A/B comparison of two agent outputs. No CLI needed. Writes `comparison.json`. |
-| [`agents/analyzer.md`](./agents/analyzer.md) | Find patterns across many session scores. Writes `analysis.json`. |
+| [`optimize-coding-agent-skill/agents/grader.md`](./optimize-coding-agent-skill/agents/grader.md) | Grade a session against behavioral assertions (branching, test runs, tool limits). Input: score JSON from `session score --json`. Writes `grading.json`. |
+| [`optimize-coding-agent-skill/agents/comparator.md`](./optimize-coding-agent-skill/agents/comparator.md) | Blind A/B comparison of two agent outputs. No CLI needed. Writes `comparison.json`. |
+| [`optimize-coding-agent-skill/agents/analyzer.md`](./optimize-coding-agent-skill/agents/analyzer.md) | Find patterns across many session scores. Writes `analysis.json`. |
 
 Invoke by telling your agent:
 
 ```
-"Read agents/grader.md and grade this session against these expectations: [...]"
+"Read optimize-coding-agent-skill/agents/grader.md and grade this session against these expectations: [...]"
 ```
 
 ## Setup Check
@@ -93,11 +93,10 @@ Invoke by telling your agent:
 Verify the underlying CLI is installed and reachable:
 
 ```bash
-python scripts/check_setup.py
+python optimize-coding-agent-skill/scripts/check_setup.py
 ```
 
-Exits 0 on success. Prints fix instructions per failure. Run from the
-[AgentKaizen](https://github.com/TheIllusionOfLife/AgentKaizen) repo root.
+Exits 0 on success. Prints fix instructions per failure.
 
 If AgentKaizen is not installed:
 
@@ -116,7 +115,7 @@ cd AgentKaizen && uv sync --group dev
 
 Skill content is maintained in the
 [AgentKaizen](https://github.com/TheIllusionOfLife/AgentKaizen) repository under
-[`skill/agentkaizen/`](https://github.com/TheIllusionOfLife/AgentKaizen/tree/main/skill/agentkaizen).
+[`skill/optimize-coding-agent-skill/`](https://github.com/TheIllusionOfLife/AgentKaizen/tree/main/skill/optimize-coding-agent-skill).
 File a bug or contribute there.
 
 ## License
