@@ -13,7 +13,7 @@ AgentKaizen measures and improves CLI-based AI coding agent behavior by connecti
 From the AgentKaizen repo root:
 
 ```bash
-python skill/optimize-coding-agent-skill/scripts/check_setup.py
+python skill/optimize-coding-agent-skill/optimize-coding-agent-skill/scripts/check_setup.py
 ```
 
 Exits 0 on success; prints specific fix instructions per failure.
