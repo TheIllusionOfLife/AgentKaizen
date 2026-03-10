@@ -911,16 +911,6 @@ def rank_variant_results(
     return sorted(ranked, key=lambda item: item["quality_score"], reverse=True)
 
 
-def _extract_true_fraction_conservative(
-    summary: dict[str, Any], scorer_key: str
-) -> float:
-    """Extract true_fraction with conservative adjustment: mean - stddev."""
-    stats = summary.get(scorer_key, {}).get("pass", {})
-    fraction = float(stats.get("true_fraction", 0.0) or 0.0)
-    stddev = float(stats.get("stddev", 0.0) or 0.0)
-    return fraction - stddev
-
-
 def rank_variant_results_aggregated(
     results: list[dict[str, Any]],
     *,
@@ -954,7 +944,12 @@ def rank_variant_results_aggregated(
 
     # For dispersion-aware gating: use conservative estimates
     def _conservative_quality(summary: dict[str, Any]) -> float:
-        """Quality using mean - stddev for each scorer."""
+        """Quality using mean - stddev for each scorer.
+
+        Note: row_count is taken from the first scorer with a non-zero count and
+        used as the weight for all scorers. This is a simplification that works
+        correctly when all scorers apply to the same set of cases (the common case).
+        """
         row_count = 1.0
         for key in active_quality_keys:
             scorer_summary = summary.get(key, {})
@@ -1484,6 +1479,11 @@ def main(argv: list[str] | None = None) -> int:
     print(render_ranked_summary_table(ranked))
 
     # Blind A/B comparison (report-only, does not affect gate)
+    if args.compare and args.runs > 1:
+        print(
+            "info: --compare with --runs > 1 uses outputs from the last run only.",
+            file=sys.stderr,
+        )
     if args.compare:
         from agentkaizen._comparator import ComparatorScorer
 

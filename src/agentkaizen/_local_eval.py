@@ -311,6 +311,7 @@ def _aggregate_cross_run(
                     "max": max(fractions),
                     "n_runs": n_runs,
                     "count": round(avg_count),
+                    # true_count/false_count are per-run averages, not totals
                     "true_count": round(sum(true_counts) / len(true_counts)),
                     "false_count": round(sum(false_counts) / len(false_counts)),
                 }

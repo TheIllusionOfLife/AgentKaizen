@@ -49,8 +49,8 @@ def test_build_evidence_slices():
         assert "turn" in s
         assert "role" in s
         assert "summary" in s
-        # Summaries should be truncated
-        assert len(s["summary"]) <= 250
+        # Summaries should be truncated to max_summary_len=200 + "..." = 203
+        assert len(s["summary"]) <= 203
 
 
 def test_build_evidence_slices_empty_trace():

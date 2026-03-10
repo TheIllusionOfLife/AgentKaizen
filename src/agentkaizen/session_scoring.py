@@ -73,11 +73,10 @@ def _build_evidence_slices(trace: dict[str, Any]) -> list[dict[str, Any]]:
             summary = summary[:max_summary_len] + "..."
         slices.append({"turn": len(slices) + 1, "role": "tool", "summary": summary})
 
-    # Cap at 20 slices, prioritizing user messages, corrections, and tool calls
+    # Cap at 20 slices, prioritizing recent tool calls and early context
     if len(slices) > 20:
-        # Keep first 5, last 5, and sample middle
+        # Keep first 8 (early context) and last 12 (recent actions) = exactly 20
         slices = slices[:8] + slices[-12:]
-        slices = slices[:20]
 
     return slices
 

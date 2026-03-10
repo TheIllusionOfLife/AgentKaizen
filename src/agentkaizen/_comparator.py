@@ -30,6 +30,13 @@ def _extract_json(text: str) -> str:
     return text.strip()
 
 
+def _sanitize_for_prompt(text: str) -> str:
+    """Prevent XML tag injection in comparator prompt by escaping closing tags."""
+    for tag in ("</response_a>", "</response_b>", "</task_prompt>", "</custom_rubric>"):
+        text = text.replace(tag, tag.replace("</", "< /"))
+    return text
+
+
 @dataclass
 class ComparatorResult:
     """Result of a blind A/B comparison."""
@@ -44,6 +51,9 @@ class ComparatorResult:
 def _build_comparator_prompt(
     output_a: str, output_b: str, prompt: str, rubric: str
 ) -> str:
+    """Build the judge prompt for blind A/B comparison with sanitized inputs."""
+    output_a = _sanitize_for_prompt(output_a)
+    output_b = _sanitize_for_prompt(output_b)
     dimensions = "\n".join(
         f"- {dim}: Rate 1-5 for each response" for dim in DEFAULT_RUBRIC_DIMENSIONS
     )
@@ -85,10 +95,12 @@ class ComparatorScorer:
         rubric: str = "",
         runner_name: str = "claude-code",
         model: str | None = None,
+        timeout_seconds: int = 120,
     ) -> None:
         self.rubric = rubric
         self.runner_name = runner_name
         self.model = model
+        self.timeout_seconds = timeout_seconds
 
     def compare(self, output_a: str, output_b: str, prompt: str) -> ComparatorResult:
         """Compare two outputs blindly, returning winner and analysis."""
@@ -105,7 +117,7 @@ class ComparatorScorer:
 
         runner = get_runner(self.runner_name, model=self.model)
         try:
-            result = runner.run(comparator_prompt, timeout_seconds=120)
+            result = runner.run(comparator_prompt, timeout_seconds=self.timeout_seconds)
             raw_json = _extract_json(result.final_message)
             parsed = json.loads(raw_json)
             if not isinstance(parsed, dict):

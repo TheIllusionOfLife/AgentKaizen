@@ -13,9 +13,9 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 def test_comparator_result_dataclass():
     """ComparatorResult construction."""
-    from agentkaizen._comparator import ComparatorResult
+    import agentkaizen._comparator as _comparator
 
-    result = ComparatorResult(
+    result = _comparator.ComparatorResult(
         winner="A",
         rubric_scores={
             "instruction_adherence": {"A": 4, "B": 2},
@@ -31,9 +31,9 @@ def test_comparator_result_dataclass():
 
 def test_comparator_shuffles_outputs():
     """Assert random shuffling occurs — verify via mock random."""
-    from agentkaizen._comparator import ComparatorScorer
+    import agentkaizen._comparator as _comparator
 
-    scorer = ComparatorScorer(rubric="test rubric")
+    scorer = _comparator.ComparatorScorer(rubric="test rubric")
 
     # Mock the runner
     mock_runner = MagicMock()
@@ -65,9 +65,9 @@ def test_comparator_shuffles_outputs():
 
 def test_comparator_deshuffle():
     """Winner correctly attributed after de-shuffle."""
-    from agentkaizen._comparator import ComparatorScorer
+    import agentkaizen._comparator as _comparator
 
-    scorer = ComparatorScorer(rubric="test rubric")
+    scorer = _comparator.ComparatorScorer(rubric="test rubric")
 
     mock_runner = MagicMock()
     mock_result = MagicMock()
@@ -103,9 +103,9 @@ def test_comparator_deshuffle():
 
 def test_comparator_parse_json():
     """Valid and malformed JSON handling."""
-    from agentkaizen._comparator import ComparatorScorer
+    import agentkaizen._comparator as _comparator
 
-    scorer = ComparatorScorer(rubric="test")
+    scorer = _comparator.ComparatorScorer(rubric="test")
 
     # Valid JSON
     mock_runner = MagicMock()
@@ -143,9 +143,9 @@ def test_comparator_parse_json():
 
 def test_comparator_tie():
     """Comparator returns tie result."""
-    from agentkaizen._comparator import ComparatorScorer
+    import agentkaizen._comparator as _comparator
 
-    scorer = ComparatorScorer(rubric="test")
+    scorer = _comparator.ComparatorScorer(rubric="test")
 
     mock_runner = MagicMock()
     mock_result = MagicMock()
@@ -173,11 +173,11 @@ def test_comparator_tie():
 
 def test_pairwise_integration():
     """Mock comparator, verify integration with ranking."""
-    from agentkaizen._comparator import ComparatorResult, ComparatorScorer
+    import agentkaizen._comparator as _comparator
     from agentkaizen.evals import run_pairwise_comparison
 
-    mock_comparator = MagicMock(spec=ComparatorScorer)
-    mock_comparator.compare.return_value = ComparatorResult(
+    mock_comparator = MagicMock(spec=_comparator.ComparatorScorer)
+    mock_comparator.compare.return_value = _comparator.ComparatorResult(
         winner="B",
         rubric_scores={"instruction_adherence": {"A": 3, "B": 5}},
         reasoning="B is better",
