@@ -78,7 +78,11 @@ class ClaudeCodeRunner:
         # result object. Extract the result event from the array in that case.
         if isinstance(payload, list):
             result_event = next(
-                (ev for ev in payload if isinstance(ev, dict) and ev.get("type") == "result"),
+                (
+                    ev
+                    for ev in payload
+                    if isinstance(ev, dict) and ev.get("type") == "result"
+                ),
                 None,
             )
             if result_event is None:
@@ -86,6 +90,7 @@ class ClaudeCodeRunner:
                     f"claude stream output contained no result event: {proc.stdout[:200]!r}"
                 )
             payload = result_event
+            # is_error on the result event is handled by the check below
 
         if not isinstance(payload, dict):
             raise AgentRunError(

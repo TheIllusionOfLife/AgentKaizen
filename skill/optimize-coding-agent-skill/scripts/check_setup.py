@@ -44,7 +44,7 @@ def _check_agentkaizen_cli() -> bool:
     except FileNotFoundError:
         print("  [FAIL] uv not found — cannot run agentkaizen")
     except subprocess.TimeoutExpired:
-        print("  [FAIL] agentkaizen --version timed out after 30s")
+        print("  [FAIL] agentkaizen --help timed out after 30s")
     print("  Fix: git clone https://github.com/TheIllusionOfLife/AgentKaizen")
     print("       cd AgentKaizen && uv sync --group dev")
     return False

@@ -38,9 +38,10 @@ Traces must be scored first with `session score --json` before analysis.
 - Group by `claim` text
 - Count `fail_count` and compute `fail_rate` = fail_count / total sessions
 - Sort by `fail_count` descending, limit to top 10
-- Use the `severity` from the most recent occurrence of each unique claim
+- Use the highest `severity` across all occurrences (`"high"` > `"medium"` > `"low"`)
 
 **Primary steering surface**: Most frequent `optimization_relevance` value across all sessions.
+On a tie, use this priority order: `"agents"` > `"readme"` > `"skill"` > `"config"` > `"none"`.
 
 ## Minimum Data Note
 

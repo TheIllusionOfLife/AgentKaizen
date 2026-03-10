@@ -49,8 +49,8 @@ For each expectation:
 | Agent used uv (not pip) | `workflow_signal_breakdown.used_uv` | `true` |
 | Agent ran tests after implementation | `workflow_signal_breakdown.ran_tests` | `true` |
 | Agent ran linter | `workflow_signal_breakdown.ran_lint` | `true` (null = unknown) |
-| Agent committed at milestones | `workflow_failures` | `"missing_commits"` absent |
-| Agent read files before modifying | `claims[type=="process"]` | Read-before-modify claim with `pass=true` |
+| Agent ran formatter | `workflow_signal_breakdown.ran_format` | `true` (null = unknown) |
+| No execution errors during run | `friction_signals` | `"execution_errors"` absent |
 | Tool call count within limit (e.g. ≤10) | `friction_signals` | `"high_tool_count"` absent |
 | No clarifying questions | `friction_signals` | `"clarification_needed"` absent |
 | No excessive corrections needed | `friction_signals` | `"high_corrections"` absent |
@@ -81,7 +81,9 @@ Write `grading.json` to the current directory:
 }
 ```
 
-**`overall_pass = true` only if ALL assertions pass** (strict AND — mirrors `gate_pass` semantics).
+**`overall_pass = true` only if ALL non-null assertions pass** (strict AND — mirrors `gate_pass` semantics).
+
+Assertions with `pass: null` (not applicable) are excluded from `total`, `passed`, and `failed` counts. `overall_pass` is `true` iff every non-null assertion passes. If all assertions are null (e.g. non-code-change task with only workflow assertions), set `overall_pass` to `null`.
 
 ## Rules
 
