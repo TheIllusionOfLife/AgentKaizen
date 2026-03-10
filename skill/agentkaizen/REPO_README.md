@@ -3,7 +3,7 @@
 An agent skill that measures and proves whether your AI coding agent actually follows
 instructions — branching discipline, test runs, tool efficiency, and more.
 
-Works with Claude Code, Gemini CLI, Cursor, Windsurf, and other `SKILL.md`-compatible agents.
+Tested with **Claude Code** and **Codex**. Compatible with any agent that supports the `SKILL.md` standard (Gemini CLI, Cursor, Windsurf) — untested.
 
 ## Install
 
@@ -11,7 +11,7 @@ Works with Claude Code, Gemini CLI, Cursor, Windsurf, and other `SKILL.md`-compa
 npx skills add TheIllusionOfLife/optimize-coding-agent-skill
 ```
 
-That's it. Your agent will pick up the skill automatically on the next session.
+That's it. On Claude Code and Codex, the skill is picked up automatically on the next session.
 
 ## What It Does
 
