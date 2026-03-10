@@ -100,6 +100,9 @@ For Codex sessions, files are read from `~/.codex/sessions/`. For Claude Code, `
 This is useful when the unit of interest is the whole session rather than a single final answer.
 
 ## Offline Eval Flow
+
+> **Skill users**: For a quick A/B comparison without CLI setup, use `/optimize-coding-agent compare: [variant A] vs [variant B] on task: [...]` in your agent session. The full offline eval pipeline below provides multi-run dispersion stats and W&B Weave integration for CI use.
+
 The offline eval command is `agentkaizen eval` (legacy alias: `codex-eval`).
 
 The flow is:
@@ -147,6 +150,9 @@ For language and style experiments such as "respond in Japanese" or "be more con
 - curated prompt suites with deterministic checks rather than external-API-backed semantic scorers
 
 ## Interactive Scoring
+
+> **Skill users**: Run `/optimize-coding-agent score my last session` in your agent session to score interactively without CLI setup. The heuristics below describe exactly what the skill's native scoring computes.
+
 Interactive scoring has two layers.
 
 ### Deterministic heuristics

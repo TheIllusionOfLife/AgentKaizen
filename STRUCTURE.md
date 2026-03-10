@@ -12,7 +12,7 @@
 - `tests/`: test suite
 - `scripts/`: thin wrapper scripts
 - `docs/`: secondary project docs and reference material
-- `skill/`: Agent Skill distribution (`skill/agentkaizen/SKILL.md` + `skill/agentkaizen.skill`)
+- `skill/`: Agent Skill distribution — `skill/optimize-coding-agent-skill/` is the canonical source synced to the [TheIllusionOfLife/optimize-coding-agent-skill](https://github.com/TheIllusionOfLife/optimize-coding-agent-skill) distribution repo. `SKILL.md` is the user-facing entry point that defines all native workflows (session scoring, one-shot runs, A/B eval) without requiring CLI installation. Subagent templates (`agents/`) and the eval format reference (`references/`) live alongside it.
 - `archive/`: stale hackathon artifacts (not part of the active codebase)
 
 ## Package Layout (`src/agentkaizen/`)

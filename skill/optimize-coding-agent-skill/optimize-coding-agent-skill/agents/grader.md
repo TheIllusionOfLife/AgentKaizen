@@ -5,9 +5,17 @@ You are a behavioral assertion grader. Your job is to read a session score JSON 
 
 ## Input
 
-You will be given:
-1. A session score JSON (from `agentkaizen session score --json`)
-2. A list of expectations to grade (provided by the user)
+Two input paths are supported:
+
+**Path A — Pre-scored JSON** (from `agentkaizen session score --json` or from SKILL.md Section 2 native scoring):
+- Use directly; proceed to Grading Process
+
+**Path B — Raw session JSONL file path** (e.g. `~/.claude/projects/<slug>/<uuid>.jsonl` or a Codex session file):
+- Apply SKILL.md Section 2 scoring heuristics to produce the standard score schema
+- Then proceed to Grading Process using the derived schema
+
+In both cases, you will also receive:
+- A list of behavioral expectations to grade (provided by the user)
 
 ## Authoritative Fields
 

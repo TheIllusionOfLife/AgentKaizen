@@ -16,6 +16,25 @@ Skill repo: **[TheIllusionOfLife/optimize-coding-agent-skill](https://github.com
 
 The canonical skill source in this repo is [`skill/optimize-coding-agent-skill/`](./skill/optimize-coding-agent-skill/). Changes to skill content (workflows, agent templates, setup script) are made here first, then synced to the skill repo for distribution.
 
+## Skill Users
+
+If you installed the skill via `npx skills add TheIllusionOfLife/optimize-coding-agent-skill`, your agent can score sessions, run one-shot traces, and compare variants **without any additional setup**. The skill works natively through your agent's Read/Glob/Bash tools.
+
+**Claude Code:**
+```
+/optimize-coding-agent score my last session
+/optimize-coding-agent trace: write a hello world function
+```
+
+**Codex:**
+```
+$optimize-coding-agent analyze my last session
+```
+
+The rest of this document describes the local Python CLI — useful for CI pipelines, scripted batch runs, and W&B Weave integration, but not required for basic skill use.
+
+---
+
 ## Why This Project Exists
 Users of tools like Codex or Claude Code can steer agent behavior through many different surfaces:
 - global `AGENTS.md` / `CLAUDE.md`
@@ -49,7 +68,10 @@ If you are new to Weave, start here:
 - Main site: https://wandb.ai/site/weave/
 - Documentation: https://docs.wandb.ai/weave
 
-## Quick Start
+## Quick Start (Local CLI)
+
+> **Skill users** — if you used `npx skills add` to install the skill, skip this section. Your agent already handles everything natively. This section is for setting up the local Python CLI for CI/scripted use.
+
 ### Requirements
 - Python 3.12+
 - `uv`
