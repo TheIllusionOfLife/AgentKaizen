@@ -116,3 +116,4 @@ codex exec / interactive sessions / claude -p
 - Do not hardcode personal W&B entity/project values anywhere.
 - Keep CLI changes synchronized across README.md, AGENTS.md, and tests.
 - Implement new agent runners in `src/agentkaizen/runners/` and register in `registry.py`.
+- Two names intentionally coexist: `agentkaizen` is the Python CLI/package name (used in all commands and imports); `optimize-coding-agent-skill` is the distribution/repo name (GitHub, `npx skills add`). Do not conflate them — they refer to different things and users encounter them in different contexts. Renaming either requires updating the other's references.
