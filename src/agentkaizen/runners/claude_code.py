@@ -33,9 +33,16 @@ class ClaudeCodeRunner:
     ) -> AgentResult:
         command = self.build_command(prompt, workspace=workspace)
         cwd = str(workspace) if workspace else None
-        # Strip CLAUDECODE so nested claude -p calls are not blocked when running
-        # from within an active Claude Code session (official skill-creator pattern).
-        env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}  # noqa: S603
+        # Strip CLAUDECODE and all CLAUDE_CODE_* vars so nested claude -p calls
+        # behave as a clean invocation from within an active Claude Code session.
+        # CLAUDECODE alone is insufficient: CLAUDE_CODE_ENTRYPOINT causes stream-json
+        # output format, and CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS leaks the outer
+        # session's tool list into the nested call.
+        env = {
+            k: v
+            for k, v in os.environ.items()
+            if k != "CLAUDECODE" and not k.startswith("CLAUDE_CODE_")
+        }  # noqa: S603
         try:
             proc = subprocess.run(  # noqa: S603
                 command,
@@ -65,6 +72,20 @@ class ClaudeCodeRunner:
             raise AgentRunError(
                 f"claude output was not valid JSON: {proc.stdout[:200]!r}"
             ) from exc
+
+        # When CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS is set (e.g. via ~/.claude/settings.json),
+        # --output-format json returns a JSON array of stream events instead of a single
+        # result object. Extract the result event from the array in that case.
+        if isinstance(payload, list):
+            result_event = next(
+                (ev for ev in payload if isinstance(ev, dict) and ev.get("type") == "result"),
+                None,
+            )
+            if result_event is None:
+                raise AgentRunError(
+                    f"claude stream output contained no result event: {proc.stdout[:200]!r}"
+                )
+            payload = result_event
 
         if not isinstance(payload, dict):
             raise AgentRunError(
