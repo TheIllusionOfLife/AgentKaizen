@@ -225,6 +225,50 @@ def test_claude_code_runner_run_raises_agent_run_error_on_timeout(monkeypatch):
         runner.run("prompt", timeout_seconds=1)
 
 
+def test_claude_code_runner_run_handles_array_output(monkeypatch):
+    """JSON array output (CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS active) is parsed correctly."""
+    array_stdout = json.dumps(
+        [
+            {"type": "system", "subtype": "init", "session_id": "abc123", "tools": []},
+            {
+                "type": "result",
+                "subtype": "success",
+                "result": "hello from array",
+                "is_error": False,
+                "duration_ms": 200,
+            },
+        ]
+    )
+
+    def fake_run(cmd, capture_output, text, timeout, cwd, env=None):
+        return SimpleNamespace(returncode=0, stdout=array_stdout, stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    runner = ClaudeCodeRunner()
+    result = runner.run("my prompt")
+
+    assert isinstance(result, AgentResult)
+    assert result.final_message == "hello from array"
+    assert result.returncode == 0
+
+
+def test_claude_code_runner_run_array_no_result_event_raises(monkeypatch):
+    """JSON array with no type=result event raises AgentRunError."""
+    array_stdout = json.dumps(
+        [{"type": "system", "subtype": "init"}, {"type": "assistant", "message": "hi"}]
+    )
+
+    def fake_run(cmd, capture_output, text, timeout, cwd, env=None):
+        return SimpleNamespace(returncode=0, stdout=array_stdout, stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    runner = ClaudeCodeRunner()
+    with pytest.raises(AgentRunError, match="no result event"):
+        runner.run("prompt")
+
+
 def test_claude_code_runner_strips_claudecode_env(monkeypatch):
     """CLAUDECODE env var must be removed so nested claude -p calls don't hang."""
     captured: dict = {}

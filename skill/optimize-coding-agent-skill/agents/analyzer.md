@@ -16,7 +16,7 @@ Traces must be scored first with `session score --json` before analysis.
 
 ## Analysis Process
 
-1. Read all `.json` files in `sessions_dir`
+1. Read all `.json` files in `sessions_dir`, sorted lexicographically by filename (deterministic ordering)
 2. For each file, extract:
    - `workflow_failures` (list[str])
    - `friction_signals` (list[str])
@@ -82,7 +82,7 @@ Write `analysis.json` to the current directory:
 
 ## Rules
 
-- Sort `workflow_failures` and `friction_signals` by `frequency` descending
-- Sort `top_behavioral_gaps` by `fail_count` descending, limit to top 10
+- Sort `workflow_failures` and `friction_signals` by `frequency` descending, then signal string ascending as a tie-breaker
+- Sort `top_behavioral_gaps` by `fail_count` descending, then `claim` text ascending as a tie-breaker, limit to top 10
 - Always output valid JSON. Write only the JSON file, no markdown wrapper.
 - If `sessions_analyzed < 3`, include a caveat in the `summary` field

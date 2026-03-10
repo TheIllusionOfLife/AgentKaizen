@@ -51,7 +51,7 @@ For each expectation:
 | Agent ran linter | `workflow_signal_breakdown.ran_lint` | `true` (null = unknown) |
 | Agent ran formatter | `workflow_signal_breakdown.ran_format` | `true` (null = unknown) |
 | No execution errors during run | `friction_signals` | `"execution_errors"` absent |
-| Tool call count within limit (e.g. ≤10) | `friction_signals` | `"high_tool_count"` absent |
+| Tool call count within limit (e.g. < 10) | `friction_signals` | `"high_tool_count"` absent |
 | No clarifying questions | `friction_signals` | `"clarification_needed"` absent |
 | No excessive corrections needed | `friction_signals` | `"high_corrections"` absent |
 
@@ -89,5 +89,5 @@ Assertions with `pass: null` (not applicable) are excluded from `total`, `passed
 
 - Never invent evidence. If a field is absent, set confidence to `"low"` and note the missing field.
 - If `workflow_signal_breakdown` contains `context_bypass: true`, grade all workflow assertions
-  (branch, uv, tests) as not applicable: set `pass` to `null` and confidence to `"low"`.
+  (branch, uv, tests, lint, format) as not applicable: set `pass` to `null` and confidence to `"low"`.
 - Always output valid JSON. Write only the JSON file, no markdown wrapper.
