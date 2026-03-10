@@ -22,6 +22,8 @@ evals/cases.generated.jsonl
 
 # Skill runtime artifacts
 skill/agentkaizen-workspace/
+skill/*-workspace/
+*.skill
 
 # OS/editor noise
 .DS_Store

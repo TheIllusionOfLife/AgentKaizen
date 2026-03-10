@@ -33,13 +33,6 @@ uv run agentkaizen session sync --once                       # Codex sessions
 uv run agentkaizen session sync --agent claude-code --once   # Claude Code sessions
 uv run agentkaizen session score --trace-file path/to/trace.json
 
-# Legacy entry points (still work, soft-deprecated)
-uv run codex-weave --prompt "Say only: ok"
-uv run codex-weave-sync-interactive --once
-uv run codex-score-interactive --trace-file path/to/trace.json
-uv run codex-casegen --limit 20 --output evals/cases.generated.jsonl
-uv run codex-eval --cases evals/cases --variant-file evals/variants/example.json
-
 # Build package
 uv build
 ```
@@ -48,7 +41,7 @@ CI runs `pytest`, `ruff check .`, and `ruff format --check .` via `uv run --grou
 
 ## Architecture
 
-`src/agentkaizen/` is the canonical package. Root-level `codex_*.py` files are backward-compat shims that re-export `main` for legacy entry points.
+`src/agentkaizen/` is the canonical package.
 
 ### Package modules
 

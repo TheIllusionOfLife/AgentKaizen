@@ -260,9 +260,6 @@ Do not stop at the ranking summary:
 - verify that the changed outputs look better for the reason you intended, not just because they happened to satisfy a literal scorer
 - if a case still fails, check whether the problem is the model behavior or the case design
 
-### Legacy entry points (soft-deprecated)
-The old `codex-weave`, `codex-eval`, `codex-casegen`, `codex-weave-sync-interactive`, and `codex-score-interactive` entry points still work and delegate to the same implementations. Prefer the `agentkaizen` subcommands for new workflows.
-
 ## How AgentKaizen Works
 AgentKaizen provides a complete local evaluation and tracing pipeline:
 
