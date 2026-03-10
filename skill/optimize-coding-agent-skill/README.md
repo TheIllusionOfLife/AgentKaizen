@@ -121,4 +121,4 @@ File a bug or contribute there.
 
 ## License
 
-MIT
+Apache
