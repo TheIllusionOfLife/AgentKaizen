@@ -355,3 +355,26 @@ def test_heuristic_pseudo_claims():
     pass_values = {c["pass"] for c in claims}
     assert True in pass_values
     assert False in pass_values
+
+
+def test_subagent_analysis_includes_claims():
+    """run_subagent_analysis (default path) wires pseudo-claims into output."""
+    from agentkaizen.session_scoring import run_subagent_analysis
+
+    trace_payload = {
+        "analysis": {
+            "branch_created": True,
+            "used_uv": False,
+            "ran_tests": False,
+            "user_correction_count": 0,
+            "clarification_question_count": 0,
+            "tool_call_count": 3,
+            "error_count": 0,
+        },
+        "task_context": "code_change",
+        "user_task": "Implement feature",
+    }
+
+    result = run_subagent_analysis(trace_payload)
+    assert "claims" in result
+    assert isinstance(result["claims"], list)

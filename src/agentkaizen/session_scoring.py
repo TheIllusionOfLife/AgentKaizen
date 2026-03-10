@@ -660,6 +660,7 @@ def run_subagent_analysis(trace_payload: dict[str, Any]) -> dict[str, Any]:
             heuristics.get("workflow_signal_breakdown", {})
         ),
         "efficiency_breakdown": dict(heuristics.get("efficiency_breakdown", {})),
+        "claims": _synthesize_pseudo_claims(heuristics),
     }
 
 
