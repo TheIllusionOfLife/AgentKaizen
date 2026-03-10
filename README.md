@@ -379,7 +379,7 @@ For deeper context, see:
 - [TECH.md](./TECH.md): stack, tooling, and constraints
 - [STRUCTURE.md](./STRUCTURE.md): file layout and architectural boundaries
 - [docs/workflows/user_workflow.md](./docs/workflows/user_workflow.md): recommended evaluation workflow
-- [skill/optimize-coding-agent-skill/SKILL.md](./skill/optimize-coding-agent-skill/SKILL.md): canonical skill source — distributed via [TheIllusionOfLife/optimize-coding-agent-skill](https://github.com/TheIllusionOfLife/optimize-coding-agent-skill); includes setup script (`scripts/`), standalone agent templates (`agents/`), and eval case format reference (`references/`)
+- [skill/optimize-coding-agent-skill/optimize-coding-agent-skill/SKILL.md](./skill/optimize-coding-agent-skill/optimize-coding-agent-skill/SKILL.md): canonical skill source — distributed via [TheIllusionOfLife/optimize-coding-agent-skill](https://github.com/TheIllusionOfLife/optimize-coding-agent-skill); includes setup script (`scripts/`), standalone agent templates (`agents/`), and eval case format reference (`references/`)
 
 Reference material:
 - [docs/reference/openai.md](./docs/reference/openai.md)
