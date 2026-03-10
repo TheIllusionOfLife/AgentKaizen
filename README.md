@@ -368,6 +368,7 @@ For deeper context, see:
 - [TECH.md](./TECH.md): stack, tooling, and constraints
 - [STRUCTURE.md](./STRUCTURE.md): file layout and architectural boundaries
 - [docs/workflows/user_workflow.md](./docs/workflows/user_workflow.md): recommended evaluation workflow
+- [skill/agentkaizen/SKILL.md](./skill/agentkaizen/SKILL.md): agent skill for invoking AgentKaizen from Codex or Claude Code; includes setup script (`scripts/`), standalone agent prompt templates (`agents/grader.md`, `agents/comparator.md`, `agents/analyzer.md`), and eval case format reference (`references/`)
 
 Reference material:
 - [docs/reference/openai.md](./docs/reference/openai.md)
