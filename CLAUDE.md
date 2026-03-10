@@ -33,13 +33,6 @@ uv run agentkaizen session sync --once                       # Codex sessions
 uv run agentkaizen session sync --agent claude-code --once   # Claude Code sessions
 uv run agentkaizen session score --trace-file path/to/trace.json
 
-# Legacy entry points (still work, soft-deprecated)
-uv run codex-weave --prompt "Say only: ok"
-uv run codex-weave-sync-interactive --once
-uv run codex-score-interactive --trace-file path/to/trace.json
-uv run codex-casegen --limit 20 --output evals/cases.generated.jsonl
-uv run codex-eval --cases evals/cases --variant-file evals/variants/example.json
-
 # Build package
 uv build
 ```
@@ -48,7 +41,7 @@ CI runs `pytest`, `ruff check .`, and `ruff format --check .` via `uv run --grou
 
 ## Architecture
 
-`src/agentkaizen/` is the canonical package. Root-level `codex_*.py` files are backward-compat shims that re-export `main` for legacy entry points.
+`src/agentkaizen/` is the canonical package.
 
 ### Package modules
 
@@ -106,7 +99,7 @@ codex exec / interactive sessions / claude -p
 - Redaction is hybrid: custom sanitization (tokens, paths, usernames) plus local regex PII detection (or Weave ML-based redaction when installed).
 - `ClaudeCodeRunner` uses `claude -p prompt --output-format json` and parses `{"type": "result", "result": "..."}`.
 - Token usage is not available from Claude Code's JSON output mode (future: `stream-json` mode).
-- `ClaudeCodeRunner.run()` strips `CLAUDECODE` from the subprocess env so that `claude -p` works from within an active Claude Code session (official skill-creator pattern). This enables nested eval/judge runs without hanging.
+- `ClaudeCodeRunner.run()` strips `CLAUDECODE` and all `CLAUDE_CODE_*` env vars so that `claude -p` works from within an active Claude Code session. Stripping `CLAUDECODE` alone is insufficient: `CLAUDE_CODE_ENTRYPOINT` causes stream-json output format and `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` (also set via `~/.claude/settings.json`) leaks the outer session's tool list into the nested call. When agent teams is active, `--output-format json` returns a JSON array of stream events; `ClaudeCodeRunner` extracts the `type=result` event from the array in that case.
 - `claude_code_session.py` parses `~/.claude/projects/<slug>/<uuid>.jsonl`. Skip `progress`, `system`, `file-history-snapshot`, `queue-operation` records (high-volume noise). Completion detection uses `stop_reason == "end_turn"` → "complete/end_turn"; `last-prompt` record → "complete/last_prompt"; otherwise "incomplete/no_signal".
 - PII redactors (presidio) can misidentify short tokens like `"end_turn"` as PERSON entities. Structural/enum fields (`status`, `status_reason`, `source`) are restored after `apply_builtin_pii_redaction` to prevent corruption.
 - `--runs N` and `--compare` force local eval mode (log a notice if Weave is configured). Multi-run uses `evaluate_n()` → `_aggregate_cross_run()` for dispersion stats; ranking uses `rank_variant_results_aggregated()` with conservative gating (mean - stddev).

@@ -2,6 +2,20 @@
 
 Measure and improve how CLI-based AI coding agents behave. Works locally out of the box; optionally integrates with W&B Weave for remote tracing and dashboards.
 
+## Agent Skill
+
+AgentKaizen is distributed as an agent skill for Claude Code and Codex:
+
+```bash
+npx skills add TheIllusionOfLife/optimize-coding-agent-skill
+```
+
+The skill lets your agent invoke AgentKaizen workflows directly — tracing runs, scoring sessions, grading behavioral expectations, and comparing variants — without manual CLI setup.
+
+Skill repo: **[TheIllusionOfLife/optimize-coding-agent-skill](https://github.com/TheIllusionOfLife/optimize-coding-agent-skill)**
+
+The canonical skill source in this repo is [`skill/optimize-coding-agent-skill/`](./skill/optimize-coding-agent-skill/). Changes to skill content (workflows, agent templates, setup script) are made here first, then synced to the skill repo for distribution.
+
 ## Why This Project Exists
 Users of tools like Codex or Claude Code can steer agent behavior through many different surfaces:
 - global `AGENTS.md` / `CLAUDE.md`
@@ -246,9 +260,6 @@ Do not stop at the ranking summary:
 - verify that the changed outputs look better for the reason you intended, not just because they happened to satisfy a literal scorer
 - if a case still fails, check whether the problem is the model behavior or the case design
 
-### Legacy entry points (soft-deprecated)
-The old `codex-weave`, `codex-eval`, `codex-casegen`, `codex-weave-sync-interactive`, and `codex-score-interactive` entry points still work and delegate to the same implementations. Prefer the `agentkaizen` subcommands for new workflows.
-
 ## How AgentKaizen Works
 AgentKaizen provides a complete local evaluation and tracing pipeline:
 
@@ -368,6 +379,7 @@ For deeper context, see:
 - [TECH.md](./TECH.md): stack, tooling, and constraints
 - [STRUCTURE.md](./STRUCTURE.md): file layout and architectural boundaries
 - [docs/workflows/user_workflow.md](./docs/workflows/user_workflow.md): recommended evaluation workflow
+- [skill/optimize-coding-agent-skill/SKILL.md](./skill/optimize-coding-agent-skill/SKILL.md): canonical skill source — distributed via [TheIllusionOfLife/optimize-coding-agent-skill](https://github.com/TheIllusionOfLife/optimize-coding-agent-skill); includes setup script (`scripts/`), standalone agent templates (`agents/`), and eval case format reference (`references/`)
 
 Reference material:
 - [docs/reference/openai.md](./docs/reference/openai.md)
