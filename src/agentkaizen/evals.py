@@ -1115,6 +1115,171 @@ def render_ranked_summary_table(ranked: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def render_eval_interpretation(
+    ranked: list[dict[str, Any]],
+    quality_similar_threshold: float = 0.02,
+) -> str:
+    """Render human-readable interpretation and next-action suggestions from ranked results."""
+    non_baseline = [r for r in ranked if r["variant"] != "baseline"]
+    if not non_baseline:
+        return ""
+
+    baseline = next((r for r in ranked if r["variant"] == "baseline"), None)
+
+    interpretation_lines: list[str] = []
+    action_set: list[str] = []  # deduplicated ordered actions
+
+    def _add_action(action: str) -> None:
+        if action not in action_set:
+            action_set.append(action)
+
+    # --- per-variant analysis ---
+    for item in non_baseline:
+        name = item["variant"]
+        delta = item["quality_delta_vs_baseline"]
+        gate_pass = item["gate_pass"]
+        gate_reason = item["gate_reason"]
+        summary = item["summary"]
+        n_runs = item.get("n_runs")
+
+        # 1. Quality movement
+        if abs(delta) <= quality_similar_threshold:
+            interpretation_lines.append(
+                f"  {name}: No measurable improvement (quality_delta={delta:+.3f})."
+            )
+            _add_action(
+                f"Run with --show-outputs to inspect which cases are failing for {name}."
+            )
+            _add_action(
+                "Verify the steering surface: if content is missing, AGENTS.md may be "
+                "more effective than README."
+            )
+        elif delta > quality_similar_threshold and gate_pass:
+            interpretation_lines.append(
+                f"  {name}: Quality improved by {delta:+.3f} with gate_pass=True — "
+                "clear winner."
+            )
+            _add_action(f"Promote {name}: copy its edits back to the real repo docs.")
+            _add_action(
+                "Add a regression case from one of its passing outputs to lock in the gain."
+            )
+        elif delta > quality_similar_threshold and not gate_pass:
+            interpretation_lines.append(
+                f"  {name}: Quality improved by {delta:+.3f} but blocked by "
+                f"gate ({gate_reason}). Quality gain comes at an efficiency cost."
+            )
+            if "latency" in gate_reason:
+                _add_action(
+                    f"Investigate why {name} is slower — check if the steering change "
+                    "causes longer agent reasoning."
+                )
+            if "token" in gate_reason:
+                _add_action(
+                    f"Investigate why {name} uses more tokens — the steering change may "
+                    "be producing longer outputs."
+                )
+        else:
+            interpretation_lines.append(
+                f"  {name}: Quality regressed by {abs(delta):.3f} — worse than baseline."
+            )
+            _add_action(f"Discard {name}: it actively hurts quality.")
+
+        # 2. Failing scorer diagnostics
+        contains_stats = summary.get("score_contains_all", {}).get("pass", {})
+        contains_frac = float(contains_stats.get("true_fraction", 1.0) or 1.0)
+        contains_stddev = float(contains_stats.get("stddev", 0.0) or 0.0)
+
+        if contains_frac < 0.8:
+            stddev_note = ""
+            if n_runs and n_runs > 1:
+                if contains_stddev == 0.0:
+                    stddev_note = (
+                        f" Variance is 0.000 across {n_runs} runs — this is a "
+                        "systematic, deterministic failure, not noise."
+                    )
+                elif contains_stddev > 0.1:
+                    stddev_note = (
+                        f" High variance ({contains_stddev:.3f}) suggests flaky behavior — "
+                        "consider --runs 5 or more."
+                    )
+            interpretation_lines.append(
+                f"    contains_pass={contains_frac:.3f}: agent is missing required "
+                f"content in {round((1 - contains_frac) * 100)}% of cases.{stddev_note}"
+            )
+            _add_action(
+                "Run --show-outputs to identify which specific content is missing "
+                "and which cases consistently fail."
+            )
+            if n_runs and n_runs > 1 and contains_stddev > 0.1:
+                _add_action(
+                    "Re-run with --runs 5 to get a more stable estimate before iterating."
+                )
+
+        min_chars_stats = summary.get("score_min_chars", {}).get("pass", {})
+        _mc_tf = min_chars_stats.get("true_fraction")
+        min_chars_frac = float(_mc_tf) if _mc_tf is not None else 1.0
+        if min_chars_frac == 0.0:
+            interpretation_lines.append(
+                "    min_chars_pass=0.000: all responses below minimum length — "
+                "the agent is giving terse answers where detailed ones are required."
+            )
+            _add_action(
+                "Add explicit length/depth guidance to AGENTS.md (e.g. 'Provide a "
+                "full explanation, not a one-line answer')."
+            )
+        elif min_chars_frac < 0.8:
+            interpretation_lines.append(
+                f"    min_chars_pass={min_chars_frac:.3f}: some responses too short."
+            )
+            _add_action(
+                "Review cases where min_chars fails — check if the steering change "
+                "is causing shorter responses."
+            )
+
+        # 3. Baseline comparison note
+        if (
+            baseline
+            and abs(delta) <= quality_similar_threshold
+            and contains_frac >= 0.8
+        ):
+            baseline_contains = float(
+                baseline["summary"]
+                .get("score_contains_all", {})
+                .get("pass", {})
+                .get("true_fraction", 1.0)
+                or 1.0
+            )
+            if abs(contains_frac - baseline_contains) < 0.01:
+                interpretation_lines.append(
+                    "    This gap exists in the baseline too — it predates this variant."
+                )
+                _add_action(
+                    "Address the contains_pass gap in a dedicated variant before "
+                    "layering other changes on top."
+                )
+
+    # 4. Global: suggest comparator if all variants are no-change
+    if all(
+        abs(r["quality_delta_vs_baseline"]) <= quality_similar_threshold
+        for r in non_baseline
+    ):
+        _add_action(
+            "Run with --compare (blind A/B) to get a qualitative tiebreaker when "
+            "metric scores are too similar to distinguish variants."
+        )
+
+    if not interpretation_lines and not action_set:
+        return ""
+
+    lines = ["", "Interpretation:"]
+    lines.extend(interpretation_lines)
+    lines.append("")
+    lines.append("Suggested Next Actions:")
+    for i, action in enumerate(action_set, 1):
+        lines.append(f"  {i}. {action}")
+    return "\n".join(lines)
+
+
 _VALID_EDIT_MODES = {"append", "prepend", "replace"}
 
 
@@ -1477,6 +1642,11 @@ def main(argv: list[str] | None = None) -> int:
             token_regression_threshold=args.token_regression_threshold,
         )
     print(render_ranked_summary_table(ranked))
+    interpretation = render_eval_interpretation(
+        ranked, quality_similar_threshold=args.quality_similar_threshold
+    )
+    if interpretation:
+        print(interpretation)
 
     # Blind A/B comparison (report-only, does not affect gate)
     if args.compare and args.runs > 1:
