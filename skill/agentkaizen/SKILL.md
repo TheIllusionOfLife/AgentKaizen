@@ -1,6 +1,7 @@
 ---
 name: agentkaizen
 description: "Use agentkaizen to measure and prove whether your AI coding agent actually follows instructions — not just to run it, but to verify it. Use this skill when: you want to trace a Codex or Claude Code run and check rule compliance (did it branch before work? stay within tool limits?); you changed AGENTS.md or config and need before/after evidence of whether it helped; a session used too many tool calls or failed to complete and you want to diagnose why; you need to generate regression eval cases from recorded traces; you want a qualitative blind comparison of two agent outputs without metric bias. The trigger: any question about measuring, comparing, or verifying agent behavior — not writing instructions, not general debugging."
+allowed-tools: Bash(uv:*) Bash(python:*) Read Write
 ---
 
 # AgentKaizen
@@ -9,9 +10,13 @@ AgentKaizen measures and improves CLI-based AI coding agent behavior by connecti
 
 ## Setup Check
 
+From the AgentKaizen repo root:
+
 ```bash
-uv run agentkaizen --help
+python skill/agentkaizen/scripts/check_setup.py
 ```
+
+Exits 0 on success; prints specific fix instructions per failure.
 
 If not installed:
 
@@ -101,6 +106,20 @@ An LLM judge evaluates each baseline/candidate output pair without knowing which
 Useful flags: `--show-outputs`, `--judge-rubric "..."`, `--edit` (inline variant), `--allow-unsafe-scorer-file`.
 
 See `references/eval-format.md` for case/variant JSONL format and scoring details.
+
+## Subagent Workflows
+
+Standalone agent prompt templates — no CLI required. Work with Codex or Claude.
+
+| Agent | File | When to use |
+|-------|------|-------------|
+| Behavioral Grader | `agents/grader.md` | Grade whether a session met behavioral expectations (branching, testing, tool limits). Input: score JSON from `session score --json`. |
+| A/B Comparator | `agents/comparator.md` | Blind qualitative comparison of two agent outputs. Works without CLI. Report-only — does not affect `gate_pass`. |
+| Pattern Analyzer | `agents/analyzer.md` | Find systematic patterns across multiple session scores. Input: directory of score JSONs. |
+
+Invoke by telling your agent: "Read `agents/grader.md` and follow those instructions with these expectations: [...]"
+
+Each agent writes output JSON to the current directory: `grading.json`, `comparison.json`, `analysis.json`.
 
 ## Config
 
