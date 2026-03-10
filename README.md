@@ -141,6 +141,16 @@ Sessions are read from `~/.claude/projects/<slug>/<uuid>.jsonl`. The sync state 
 uv run agentkaizen session score --trace-file path/to/interactive-trace.json
 ```
 
+The default heuristic backend outputs metrics, friction signals, workflow gaps, and **Evidence-Based Claims** — structured pass/fail claims grouped by type (process, behavioral, efficiency) derived from the detected signals.
+
+Use the external judge for a second opinion before promoting a steering change:
+
+```bash
+uv run agentkaizen session score \
+  --scoring-backend external \
+  --trace-file path/to/interactive-trace.json
+```
+
 Structured JSON output:
 
 ```bash
@@ -165,6 +175,29 @@ uv run agentkaizen eval \
   --latency-regression-threshold 0.20 \
   --token-regression-threshold 0.20
 ```
+
+Run with multiple samples for dispersion-aware gating (recommended before promoting changes):
+
+```bash
+uv run agentkaizen eval \
+  --runs 3 \
+  --cases evals/cases/core.jsonl \
+  --variant-file evals/variants/example_add_line_to_readme.json
+```
+
+`--runs N` evaluates each variant N times and reports `quality_score: 0.850 ± 0.032 (n=3)`. Gating uses conservative estimates (`mean - stddev`) to reduce the chance of promoting based on a lucky single run.
+
+Run a blind A/B comparison alongside metric scoring (report-only, does not affect gate):
+
+```bash
+uv run agentkaizen eval \
+  --compare \
+  --cases evals/cases/language-steering.jsonl \
+  --variant-file evals/variants/example_agents_japanese_response.json \
+  --show-outputs
+```
+
+`--compare` calls an LLM judge to evaluate each baseline/candidate output pair without revealing which is which, eliminating position bias. Per-case verdicts show winner, rubric scores (instruction adherence, completeness, efficiency, correctness), and the judge's reasoning. Use `--compare-rubric "..."` to add custom evaluation criteria on top of the defaults.
 
 Run the Japanese-response `AGENTS.md` experiment:
 
@@ -321,7 +354,8 @@ Key modules (all under `src/agentkaizen/`):
 - [`core.py`](./src/agentkaizen/core.py) — shared infra: JSONL parser, PII redaction, W&B env
 - [`_weave_compat.py`](./src/agentkaizen/_weave_compat.py) — `HAS_WEAVE` flag, `weave_init()`, `weave_op()` shims
 - [`_llm_judge.py`](./src/agentkaizen/_llm_judge.py) — `LLMJudgeScorer`: configurable LLM-as-a-judge scorer for eval cases
-- [`_local_eval.py`](./src/agentkaizen/_local_eval.py) — local evaluation framework (`LocalEvaluation`, `LocalModel`, `LocalScorer`)
+- [`_local_eval.py`](./src/agentkaizen/_local_eval.py) — local evaluation framework (`LocalEvaluation`, `LocalModel`, `LocalScorer`); `evaluate_n()` for multi-run dispersion stats
+- [`_comparator.py`](./src/agentkaizen/_comparator.py) — blind A/B comparator (`ComparatorScorer`, `ComparatorResult`): position-bias-free side-by-side comparison with rubric scoring
 - [`_trace_log.py`](./src/agentkaizen/_trace_log.py) — local JSONL trace persistence and querying
 - [`_pii.py`](./src/agentkaizen/_pii.py) — local regex-based PII redaction
 - [`runners/`](./src/agentkaizen/runners/) — `AgentRunner` protocol + `CodexRunner`, `ClaudeCodeRunner`
