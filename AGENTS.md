@@ -1,5 +1,8 @@
 # Repository Guidelines
 
+> **Note for skill users**: If you installed this skill via `npx skills add TheIllusionOfLife/optimize-coding-agent-skill`, the commands in this file are for *developing the AgentKaizen repository itself*, not for using the skill. Skill users invoke the skill directly in their agent session — no `uv` or `git clone` needed.
+
+
 ## Purpose
 This repository exists to improve CLI-based AI agent behavior with measurable feedback loops. The main product question is not just "can Codex solve a task?" but "which steering surface changed the behavior, and did it help enough to keep?"
 
@@ -28,7 +31,10 @@ Useful optional environment variables:
 - `WEAVE_LOG_LEVEL` when debugging Weave integration behavior
 - `WEAVE_DISABLED=true` for local runs where tracing should be bypassed
 
-## Commands You Should Use
+## Commands You Should Use (Repo Development)
+
+> These commands are for developing the AgentKaizen repository. Skill users do not need to run any of these.
+
 Use `uv` for all Python workflows.
 
 Common commands:

@@ -1,144 +1,207 @@
 ---
 name: agentkaizen
-description: "Use agentkaizen to measure and prove whether your AI coding agent actually follows instructions — not just to run it, but to verify it. Use this skill when: you want to trace a Codex or Claude Code run and check rule compliance (did it branch before work? stay within tool limits?); you changed AGENTS.md or config and need before/after evidence of whether it helped; a session used too many tool calls or failed to complete and you want to diagnose why; you need to generate regression eval cases from recorded traces; you want a qualitative blind comparison of two agent outputs without metric bias. The trigger: any question about measuring, comparing, or verifying agent behavior — not writing instructions, not general debugging."
-allowed-tools: Bash(uv:*) Bash(python:*) Read Write
+description: "Use agentkaizen to measure and prove whether your AI coding agent actually follows instructions. Works natively — no installation required. Use this skill when: you want to score a recent Codex or Claude Code session and check rule compliance (did it branch before work? stay within tool limits?); you changed AGENTS.md or config and need before/after evidence; a session used too many tool calls or failed to complete; you want a qualitative blind comparison of two agent outputs. Trigger: any question about measuring, comparing, or verifying agent behavior."
+allowed-tools: Bash Read Write Glob
 ---
 
 # AgentKaizen
 
-AgentKaizen measures and improves CLI-based AI coding agent behavior by connecting steering inputs (AGENTS.md, skills, config) to measurable outcomes through tracing, scoring, and offline evaluation.
+Measure and improve CLI-based AI coding agent behavior. Works entirely through agent-native tools (Read/Glob/Bash/Write) — no Python install or CLI required.
 
-## Setup Check
+---
 
-From the AgentKaizen repo root:
+## Section 1 — Detect Environment
 
-```bash
-python skill/optimize-coding-agent-skill/optimize-coding-agent-skill/scripts/check_setup.py
-```
-
-Exits 0 on success; prints specific fix instructions per failure.
-
-If not installed:
+First, determine which agent context is active:
 
 ```bash
-git clone https://github.com/TheIllusionOfLife/AgentKaizen
-cd AgentKaizen && uv sync --group dev
+echo $CLAUDECODE
 ```
 
-## Workflows
+- Non-empty → **Claude Code** context: sessions at `~/.claude/projects/`, one-shot via `claude -p`
+- Empty → check for Codex: `command -v codex` or presence of `~/.codex/sessions/` → **Codex** context
+- If running as Claude Code (responding to this prompt), you are always in Claude Code context
 
-### 1. Trace a One-Shot Run
+---
+
+## Section 2 — Score a Session (native, no CLI)
+
+### Claude Code path
+
+**Session discovery:**
+1. Glob `~/.claude/projects/` for project directories (skip `*/subagents/`)
+2. In the most recently modified project dir, select the latest `*.jsonl` NOT under `*/subagents/`
+3. Hard cap: read at most 500 records; skip early if file is very large
+
+**Record parsing rules:**
+- Skip records where `type` is in: `progress`, `system`, `file-history-snapshot`, `queue-operation`
+- `user` records → user turns (content may be string or list of blocks; extract text)
+- `assistant` records → assistant turns (content blocks: `text`, `tool_use`, `thinking`)
+
+**Completion detection:**
+- Last `assistant` record with `message.stop_reason == "end_turn"` → `"complete"`
+- Any record with `type == "last-prompt"` → `"complete"`
+- Otherwise → `"incomplete"`
+
+### Codex path
+
+**Session discovery:**
+1. Read `~/.codex/session_index.jsonl` — parse lines, sort by `updated_at` desc
+2. Take most recent entry; resolve session file path from `id` under `~/.codex/sessions/`
+3. Fallback: glob `~/.codex/sessions/**/*.jsonl` sorted by mtime if index absent
+
+**Record parsing rules:**
+- `response_item` records → messages (access `payload.role` and `payload.content`)
+- `event_msg` records → metadata (usage, completion)
+
+**Completion detection:**
+- `event_msg` with `payload.type == "task_complete"` → `"complete"`
+- Otherwise → `"incomplete"`
+
+### Shared scoring heuristics (both paths)
+
+**Task classification** — scan first user message with this precedence:
+1. `code_change` (highest): "implement", "fix", "feature", "bug", "add", "create", "refactor", "build", "write"
+2. `docs_only`: "agents.md", "readme", "claude.md", "skill", "config", "update docs"
+3. `review`: "review", "analyze", "check", "audit", "look at"
+4. `exploration`: "explain", "how does", "what is", "show me"
+- Ties: `code_change` wins over `docs_only` wins over `review` wins over `exploration`
+- Default if no match: `"unknown"`
+
+**Workflow signals** — scan all assistant content (only meaningful for `code_change` tasks; mark `"n/a"` for others). Check in priority order: (1) `tool_use` block `input` fields (command strings), (2) tool result text, (3) assistant prose as fallback:
+- `branch_created`: look for "git checkout -b" or "git switch -c"
+- `used_uv`: look for "uv run" or "uv sync"
+- `ran_tests`: look for "pytest", "test passed", "tests pass"
+- `ran_lint`: look for "ruff check" or "ruff format"
+- `created_pr`: look for "gh pr create" or "pull request"
+
+**Friction signals** — scan user turns after the first:
+- `user_corrections`: look for "that's wrong", "no,", "actually,", "you missed", "not what I asked"
+- `clarification_needed`: look for "what do you mean", "can you clarify", "I don't understand", "which one"
+- `execution_errors`: look for tool results with exit code ≠ 0 or text containing "Error:", "Traceback"
+
+**Workflow failures** — derive from workflow signals (only for `code_change`):
+- `missing_branch` if `branch_created == false`
+- `missing_tests` if `ran_tests == false`
+- `missing_lint` if `ran_lint == false`
+
+**Optimization relevance** — scan the entire session for the most prominent steering surface:
+- `"agents"` if mentions AGENTS.md, CLAUDE.md, global config
+- `"readme"` if mentions README.md as a guidance source
+- `"skill"` if mentions skill, SKILL.md
+- `"config"` if mentions pyproject.toml, .codex config, agent settings
+- `"none"` if none of the above
+
+**Claim synthesis** — produce one claim per detected signal:
+- For each `true` workflow signal: type=`"process"`, pass=`true`, severity=`"low"`
+- For each `false` workflow signal (code_change only): type=`"process"`, pass=`false`, severity=`"high"`
+- For each friction signal: type=`"behavioral"`, pass=`false`, severity=`"medium"`
+
+**Score output schema** (produce this exact JSON structure):
+```json
+{
+  "task": "<first user message, truncated to 200 chars>",
+  "task_type": "code_change|docs_only|review|exploration|unknown",
+  "outcome": "complete|incomplete|unknown",
+  "workflow_signal_breakdown": {
+    "branch_created": true|false|"n/a",
+    "used_uv": true|false|"n/a",
+    "ran_tests": true|false|"n/a",
+    "ran_lint": true|false|"n/a",
+    "created_pr": true|false|"n/a"
+  },
+  "friction_signals": ["user_corrections", "execution_errors"],
+  "workflow_failures": ["missing_branch", "missing_tests"],
+  "optimization_relevance": "agents|readme|skill|config|none",
+  "claims": [
+    {
+      "type": "process|behavioral|efficiency|correctness",
+      "claim": "<assertion text>",
+      "evidence": "<turn excerpt or signal name>",
+      "pass": true|false,
+      "severity": "high|medium|low"
+    }
+  ]
+}
+```
+
+After producing the JSON, provide a brief human-readable summary (3-5 sentences): task description, outcome, top workflow gaps, and the primary optimization surface.
+
+---
+
+## Section 3 — One-Shot Traced Run
+
+Run a single agent task and score the result.
+
+### Claude Code path
 
 ```bash
-# Codex (default)
-uv run agentkaizen run --prompt "Your task here"
-
-# Claude Code
-uv run agentkaizen run --agent claude-code --prompt "Your task here"
-
-# With guardrails (exit 3 on violation)
-uv run agentkaizen run --prompt "..." --must-contain "phrase" --guardrail-mode fail
+env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS \
+  claude -p "<task prompt>" --output-format json
 ```
 
-Trace saved to `~/.agentkaizen/traces.jsonl`. Optionally streamed to W&B Weave if `WANDB_API_KEY` is set.
+Parse result:
+- If stdout is a JSON object: check `type == "result"`, fail fast if `is_error == true`, extract `result` string
+- If stdout is a JSON array: find element with `type == "result"`, apply same checks
 
-### 2. Sync & Score Sessions
+After capturing output, apply Section 2 heuristics to the output text and produce the score schema.
+
+### Codex path
 
 ```bash
-# Sync Codex interactive sessions
-uv run agentkaizen session sync --once
-
-# Sync Claude Code sessions (~/.claude/projects/)
-uv run agentkaizen session sync --agent claude-code --once
-
-# Score a trace file (default heuristic backend)
-uv run agentkaizen session score --trace-file path/to/trace.json
-
-# Score with external Codex judge (slower, grounded claims)
-uv run agentkaizen session score --scoring-backend external --trace-file path/to/trace.json
+codex exec --json --skip-git-repo-check "<task prompt>"
 ```
 
-`score` outputs: task, outcome, friction signals, workflow gaps, metrics, and an **Evidence-Based Claims** section — structured pass/fail assertions about agent behavior grouped by type (process, behavioral, efficiency). The default heuristic backend synthesizes claims from signal detection instantly; `--scoring-backend external` grounds claims in specific turn evidence from the trace.
+Parse JSONL stdout line by line:
+- Find event with `type == "item.completed"` where `item.type == "agent_message"` — extract response text from `item.content`
+- Find event with `type == "turn.completed"` to confirm finish
 
-### 3. Generate Eval Cases
+After capturing output, apply Section 2 heuristics and produce the score schema.
 
-```bash
-uv run agentkaizen eval casegen --limit 20 --output evals/cases.generated.jsonl
-```
+---
 
-Review and curate the output. Each case: `prompt`, optional `expected_output`, `must_contain`, `judge_rubric`. See `references/eval-format.md` for full schema.
+## Section 4 — A/B Eval
 
-### 4. Run Evals & Compare Variants
+Compare two variants (e.g. two AGENTS.md versions, two config options) on a task.
 
-**Basic comparison:**
+1. Accept two variant descriptions from the user
+2. For each variant:
+   - Apply the variant change to a temp copy or describe it in the prompt context
+   - Run Section 3 one-shot with the same task prompt
+   - Produce a Section 2 score for each run
+3. Feed both outputs and scores to `agents/comparator.md` workflow
+4. Report: winner, rubric scores (instruction adherence, completeness, efficiency, correctness), reasoning
 
-```bash
-uv run agentkaizen eval \
-  --cases evals/cases \
-  --variant-file evals/variants/example.json
-```
+---
 
-**Multi-run for dispersion-aware gating** (recommended before promoting):
+## Section 5 — Subagent Workflows
 
-```bash
-uv run agentkaizen eval \
-  --runs 3 \
-  --cases evals/cases/core.jsonl \
-  --variant-file evals/variants/example.json
-```
-
-Reports `quality_score: 0.850 ± 0.032 (n=3)`. Gating uses `mean - stddev` (conservative) to avoid promoting based on a lucky run. Zero stddev on a failing scorer means the problem is systematic, not noise.
-
-**Blind A/B comparison** (qualitative, report-only):
-
-```bash
-uv run agentkaizen eval \
-  --compare \
-  --show-outputs \
-  --cases evals/cases \
-  --variant-file evals/variants/example.json
-```
-
-An LLM judge evaluates each baseline/candidate output pair without knowing which is which (random shuffle eliminates position bias). Per-case verdict: winner, rubric scores (instruction adherence, completeness, efficiency, correctness 1-5), reasoning, strengths, weaknesses. Use `--compare-rubric "..."` for custom criteria. Does **not** affect `gate_pass`.
-
-**After every eval**, the output automatically includes an **Interpretation** block and prioritized **Suggested Next Actions** — no delta means the wrong steering surface was edited; failing `contains_pass` with `stddev=0` is deterministic not noise; etc.
-
-Useful flags: `--show-outputs`, `--judge-rubric "..."`, `--edit` (inline variant), `--allow-unsafe-scorer-file`.
-
-See `references/eval-format.md` for case/variant JSONL format and scoring details.
-
-## Subagent Workflows
-
-Standalone agent prompt templates — no CLI required.
+These standalone templates work without any CLI install:
 
 | Agent | File | When to use |
 |-------|------|-------------|
-| Behavioral Grader | `agents/grader.md` | Grade whether a session met behavioral expectations (branching, testing, tool limits). Input: score JSON from `session score --json`. |
-| A/B Comparator | `agents/comparator.md` | Blind qualitative comparison of two agent outputs. Works without CLI. Report-only — does not affect `gate_pass`. |
-| Pattern Analyzer | `agents/analyzer.md` | Find systematic patterns across multiple session scores. Input: directory of score JSONs. |
+| Behavioral Grader | `agents/grader.md` | Grade session against behavioral expectations. Accepts raw session JSONL path or pre-scored JSON. Writes `grading.json`. |
+| A/B Comparator | `agents/comparator.md` | Blind qualitative comparison of two outputs. Writes `comparison.json`. |
+| Pattern Analyzer | `agents/analyzer.md` | Find patterns across multiple sessions. Accepts raw JSONL files or pre-scored JSONs. Writes `analysis.json`. |
 
 Invoke by telling your agent: "Read `agents/grader.md` and follow those instructions with these expectations: [...]"
 
-Each agent writes output JSON to the current directory: `grading.json`, `comparison.json`, `analysis.json`.
+---
 
-## Config
+## Section 6 — Agentkaizen CLI (Optional / CI)
 
-Set persistent defaults in `pyproject.toml` to avoid repeating CLI flags:
+For reproducible batch runs, multi-run dispersion stats, W&B Weave integration:
 
-```toml
-[tool.agentkaizen]
-agent = "claude-code"   # or "codex"
-model = "claude-sonnet-4-6"
-entity = "my-wandb-entity"
-project = "my-project"
+```bash
+uv tool install "git+https://github.com/TheIllusionOfLife/AgentKaizen"
+agentkaizen --help
 ```
 
-## Key Notes
+All `uv run agentkaizen ...` commands become `agentkaizen ...` after install.
 
-- **W&B Weave is optional** — all workflows run locally without it.
-- **`--runs N` forces local eval path** — Weave is bypassed; a notice is printed.
-- **`--compare` is report-only** — comparator verdicts inform the user but never change `gate_pass`.
-- **LLM-as-a-judge** — add `--judge-rubric "..."` to `eval` for semantic scoring, or set per-case in JSONL.
-- **Guardrail modes** — `warn` (default, exit 0) vs `fail` (exit 3 on violation).
-- **Nested runs** — `agentkaizen run --agent claude-code` works from within an active Claude Code session (CLAUDECODE env var is stripped automatically).
-- **Interpretation is automatic** — after every eval, a human-readable analysis and next-action list are printed below the ranking table.
+For development (editing the repo):
+```bash
+git clone https://github.com/TheIllusionOfLife/AgentKaizen
+cd AgentKaizen && uv sync --group dev
+uv run agentkaizen --help
+```

@@ -5,33 +5,38 @@ You are a behavioral assertion grader. Your job is to read a session score JSON 
 
 ## Input
 
-You will be given:
-1. A session score JSON (from `agentkaizen session score --json`)
-2. A list of expectations to grade (provided by the user)
+Two input paths are supported:
+
+**Path A — Pre-scored JSON** (from `agentkaizen session score --json` or from SKILL.md Section 2 native scoring):
+- Use directly; proceed to Grading Process
+
+**Path B — Raw session JSONL file path** (e.g. `~/.claude/projects/<slug>/<uuid>.jsonl` or a Codex session file):
+- Apply SKILL.md Section 2 scoring heuristics to produce the standard score schema
+- Then proceed to Grading Process using the derived schema
+
+In both cases, you will also receive:
+- A list of behavioral expectations to grade (provided by the user)
 
 ## Authoritative Fields
 
 The following fields in the score JSON are ground truth for grading:
 
-**workflow_signal_breakdown** (present when `task_context == "code_change"`):
-- `branch_created` (bool): Agent created a feature branch before making changes
-- `used_uv` (bool): Agent used uv for package management (not pip)
-- `ran_tests` (bool): Agent ran tests after implementation
-- `ran_lint` (bool | null): Agent ran linter (null = not detected)
-- `ran_format` (bool | null): Agent ran formatter (null = not detected)
-- `context_bypass: true` (instead of above): non-code-change task — workflow signals skipped
+**task_type** (string): `"code_change"` | `"docs_only"` | `"review"` | `"exploration"` | `"unknown"`
 
-**friction_signals** (list[str]): e.g. `["clarification_needed", "high_corrections"]`
+**outcome** (string): `"complete"` | `"incomplete"` | `"unknown"`
 
-**workflow_failures** (list[str]): e.g. `["missing_branch", "missing_uv", "missing_tests"]`
+**workflow_signal_breakdown** (present; all values `true` | `false` | `"n/a"` — `"n/a"` when `task_type != "code_change"`):
+- `branch_created`: Agent created a feature branch before making changes
+- `used_uv`: Agent used uv for package management (not pip)
+- `ran_tests`: Agent ran tests after implementation
+- `ran_lint`: Agent ran linter
+- `created_pr`: Agent created a pull request
+
+**friction_signals** (list[str]): e.g. `["clarification_needed", "user_corrections", "execution_errors"]`
+
+**workflow_failures** (list[str]): e.g. `["missing_branch", "missing_tests", "missing_lint"]`
 
 **claims** (list): Evidence-based claims with fields: `type`, `claim`, `evidence`, `pass`, `severity`
-
-**heuristics.workflow_compliance** (float 0-1)
-
-**heuristics.efficiency** (float 0-1)
-
-**heuristics.user_friction** (float 0-1)
 
 ## Grading Process
 
@@ -48,12 +53,11 @@ For each expectation:
 | Agent created feature branch before changes | `workflow_signal_breakdown.branch_created` | `true` |
 | Agent used uv (not pip) | `workflow_signal_breakdown.used_uv` | `true` |
 | Agent ran tests after implementation | `workflow_signal_breakdown.ran_tests` | `true` |
-| Agent ran linter | `workflow_signal_breakdown.ran_lint` | `true` (null = unknown) |
-| Agent ran formatter | `workflow_signal_breakdown.ran_format` | `true` (null = unknown) |
+| Agent ran linter | `workflow_signal_breakdown.ran_lint` | `true` |
+| Agent created PR | `workflow_signal_breakdown.created_pr` | `true` |
 | No execution errors during run | `friction_signals` | `"execution_errors"` absent |
-| Tool call count within limit (e.g. < 10) | `friction_signals` | `"high_tool_count"` absent |
 | No clarifying questions | `friction_signals` | `"clarification_needed"` absent |
-| No excessive corrections needed | `friction_signals` | `"high_corrections"` absent |
+| No excessive corrections needed | `friction_signals` | `"user_corrections"` absent |
 
 ## Output
 
@@ -88,6 +92,6 @@ Assertions with `pass: null` (not applicable) are excluded from `total`, `passed
 ## Rules
 
 - Never invent evidence. If a field is absent, set confidence to `"low"` and note the missing field.
-- If `workflow_signal_breakdown` contains `context_bypass: true`, grade all workflow assertions
-  (branch, uv, tests, lint, format) as not applicable: set `pass` to `null` and confidence to `"low"`.
+- If `task_type != "code_change"`, all workflow signal assertions (branch, uv, tests, lint, pr) are not applicable: set `pass` to `null` and confidence to `"low"`.
+- Workflow signal values of `"n/a"` are treated the same as not applicable.
 - Always output valid JSON. Write only the JSON file, no markdown wrapper.

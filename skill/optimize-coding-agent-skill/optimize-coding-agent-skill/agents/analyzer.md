@@ -5,18 +5,22 @@ across multiple agent session score files.
 
 ## Input
 
-`sessions_dir`: A directory containing score JSON files produced by:
+`sessions_dir`: A directory containing either:
 
+**Option A — Pre-scored JSON files** produced by:
 ```bash
 agentkaizen session score --json --trace-file <trace> > scores/session_N.json
 ```
+Use directly for analysis.
 
-**Note**: `~/.agentkaizen/traces.jsonl` stores raw execution traces without score fields.
-Traces must be scored first with `session score --json` before analysis.
+**Option B — Raw session JSONL files** from `~/.claude/projects/<slug>/` or `~/.codex/sessions/`:
+For each `.jsonl` file, apply SKILL.md Section 2 scoring heuristics to derive the standard score schema before aggregating.
+
+Both options produce the same downstream analysis. Mixed directories (some scored, some raw) are supported: detect by checking whether the file contains the score schema fields (`task_type`, `workflow_signal_breakdown`) or raw session records (`type`, `message`/`payload`).
 
 ## Analysis Process
 
-1. Read all `.json` files in `sessions_dir`, sorted lexicographically by filename (deterministic ordering)
+1. Read all `.json` and `.jsonl` files in `sessions_dir`, sorted lexicographically by filename (deterministic ordering). For each file, detect type: if it contains score schema fields (`task_type`, `workflow_signal_breakdown`), use directly; if it contains raw session records (`type`, `message`/`payload`), apply SKILL.md Section 2 scoring heuristics to produce the standard schema first. No prior conversion required for `.jsonl` files.
 2. For each file, extract:
    - `workflow_failures` (list[str])
    - `friction_signals` (list[str])

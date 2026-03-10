@@ -9,11 +9,17 @@
 - CI: GitHub Actions
 
 ## Runtime Dependencies
-- Codex CLI (`codex`) or Claude Code CLI (`claude`) — at least one is required depending on the configured agent
-- W&B credentials are required for live tracing and eval submission:
+
+**For CLI use** (`agentkaizen run`, `agentkaizen eval`, etc.):
+- Codex CLI (`codex`) or Claude Code CLI (`claude`) — at least one required depending on configured agent
+- W&B credentials — optional; required only for remote tracing and dashboards:
   - `WANDB_API_KEY`
   - `WANDB_ENTITY`
   - `WANDB_PROJECT`
+
+**For skill use** (`/optimize-coding-agent` or `$optimize-coding-agent`):
+- The agent's own CLI (`claude` or `codex`) is already available in the session context — no additional install
+- W&B is not required; all workflows run locally via agent-native tools
 
 Useful optional Weave and W&B environment variables:
 - `WANDB_BASE_URL`
