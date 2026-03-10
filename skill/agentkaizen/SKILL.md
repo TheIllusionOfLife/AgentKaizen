@@ -109,7 +109,7 @@ See `references/eval-format.md` for case/variant JSONL format and scoring detail
 
 ## Subagent Workflows
 
-Standalone agent prompt templates — no CLI required. Work with Codex or Claude.
+Standalone agent prompt templates — no CLI required.
 
 | Agent | File | When to use |
 |-------|------|-------------|

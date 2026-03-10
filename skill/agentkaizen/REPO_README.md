@@ -3,7 +3,7 @@
 An agent skill that measures and proves whether your AI coding agent actually follows
 instructions — branching discipline, test runs, tool efficiency, and more.
 
-Tested with **Claude Code** and **Codex**. Compatible with any agent that supports the `SKILL.md` standard (Gemini CLI, Cursor, Windsurf) — untested.
+Supports **Claude Code** and **Codex** only.
 
 ## Install
 
@@ -11,7 +11,7 @@ Tested with **Claude Code** and **Codex**. Compatible with any agent that suppor
 npx skills add TheIllusionOfLife/optimize-coding-agent-skill
 ```
 
-That's it. On Claude Code and Codex, the skill is picked up automatically on the next session.
+That's it. The skill is picked up automatically on the next session.
 
 ## What It Does
 
@@ -108,8 +108,8 @@ cd AgentKaizen && uv sync --group dev
 
 ## Requirements
 
-- **For CLI workflows** (trace, score, eval): [AgentKaizen](https://github.com/TheIllusionOfLife/AgentKaizen) installed, `uv`, and Codex CLI or Claude Code CLI
-- **For standalone agent templates** (`agents/`): no CLI required — your agent reads the template and follows it directly
+- **Agent**: Codex CLI (`codex`) or Claude Code CLI (`claude`)
+- **AgentKaizen CLI**: [github.com/TheIllusionOfLife/AgentKaizen](https://github.com/TheIllusionOfLife/AgentKaizen) — install with `uv sync --group dev`
 - **W&B Weave**: optional — all workflows run locally without it
 
 ## Source
